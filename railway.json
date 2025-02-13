@@ -4,5 +4,8 @@
       "path": "./backend",
       "provider": "python"
     }
+  },
+  "deploy": {
+    "startCommand": "gunicorn --bind 0.0.0.0:$PORT --pythonpath backend app:app"
   }
 }
