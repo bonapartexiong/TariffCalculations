@@ -1,17 +1,20 @@
 [phases.setup]
 nixPkgs = [
   "python310",
-  "python310Packages.pip", 
+  "python310Packages.pip",
+  "python310Packages.virtualenv",
   "python310Packages.setuptools",
   "python310Packages.wheel",
-  "python310Packages.virtualenv"
+  "zlib"  # Required for Python package builds
 ]
 
 [phases.install]
 commands = [
   "cd backend",
-  "python -m ensurepip --upgrade",  # Safer pip initialization
-  "pip install --no-cache-dir -r requirements.txt"  # Bypass corrupted caches
+  "python -m venv .venv",  # Create isolated virtual environment
+  "source .venv/bin/activate",
+  "pip install --no-cache-dir -U pip setuptools wheel",  # Safe upgrade within venv
+  "pip install --no-cache-dir -r requirements.txt"
 ]
 
 [phases.start]
