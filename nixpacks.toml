@@ -8,21 +8,19 @@ nixPkgs = [
   "gcc",
   "libxml2.dev",
   "libxslt.dev",
-  "stdenv.cc.cc.lib",
-  "openblas",
-  "lapack"
+  "stdenv.cc.cc.lib"
 ]
 
 [phases.install]
 commands = [
+  # Clean environment first
+  "find . -name '*.nix' -delete",
+  
+  # Core installation
   "cd backend",
   "python -m venv /app/venv --system-site-packages",
-  
-  # Explicitly install core dependencies first
   "/app/venv/bin/pip install --no-cache-dir -U pip setuptools wheel",
   "/app/venv/bin/pip install --no-cache-dir numpy==1.24.4",
-  
-  # Install remaining requirements
   "/app/venv/bin/pip install --no-cache-dir -r requirements.txt"
 ]
 
