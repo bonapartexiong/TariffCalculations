@@ -8,19 +8,31 @@ nixPkgs = [
   "gcc",
   "libxml2.dev",
   "libxslt.dev",
-  "stdenv.cc.cc.lib"
+  "stdenv.cc.cc.lib",
+  "openblas",
+  "lapack",
+  "freetype.dev",
+  "libjpeg",
+  "libpng",
+  "libcxx"
 ]
 
 [phases.install]
 commands = [
-  # Clean environment first
-  "find . -name '*.nix' -delete",
+  # Clean environment
+  "rm -rf .nixpacks",
   
-  # Core installation
+  # Install core packages first
   "cd backend",
   "python -m venv /app/venv --system-site-packages",
-  "/app/venv/bin/pip install --no-cache-dir -U pip setuptools wheel",
-  "/app/venv/bin/pip install --no-cache-dir numpy==1.24.4",
+  "/app/venv/bin/pip install --no-cache-dir -U 'pip==23.3.1' 'setuptools==68.2.2' 'wheel==0.42.0'",
+  
+  # Install numeric packages with explicit OpenBLAS linkage
+  "/app/venv/bin/pip install --no-cache-dir 'numpy==1.24.4' --only-binary=:all:",
+  "/app/venv/bin/pip install --no-cache-dir 'pandas==1.5.3' --only-binary=:all:",
+  "/app/venv/bin/pip install --no-cache-dir 'scikit-learn==1.0.2' --only-binary=:all:",
+  
+  # Install remaining requirements
   "/app/venv/bin/pip install --no-cache-dir -r requirements.txt"
 ]
 
