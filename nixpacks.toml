@@ -8,14 +8,20 @@ nixPkgs = [
   "gcc",
   "libxml2.dev",
   "libxslt.dev",
-  "postgresql",  # Required for psycopg2 if used
-  "stdenv.cc.cc.lib"  # Critical C++ library
+  "stdenv.cc.cc.lib",
+  "libjpeg",
+  "freetype.dev",
+  "libpng",
+  "libcxx"
 ]
 
 [phases.install]
 commands = [
   "cd backend",
   "python -m venv /app/venv --system-site-packages",
+  "source /app/venv/bin/activate",
+  "export C_INCLUDE_PATH=${pkgs.zlib.dev}/include:${pkgs.libffi.dev}/include",
+  "export LIBRARY_PATH=${pkgs.zlib}/lib:${pkgs.libffi}/lib",
   "/app/venv/bin/pip install --no-cache-dir -U pip setuptools wheel",
   "/app/venv/bin/pip install --no-cache-dir -r requirements.txt"
 ]
