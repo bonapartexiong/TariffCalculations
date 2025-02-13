@@ -1,22 +1,24 @@
 [phases.setup]
 nixPkgs = [
   "python310",
+  "python310Packages.pip"[phases.setup]
+nixPkgs = [
+  "python310",
+  "python310Packages.virtualenv",
   "python310Packages.pip",
-  "python310Packages.setuptools",
-  "python310Packages.wheel",
   "zlib",
-  "gcc",  # Essential compiler
   "libffi",
-  "openssl",
-  "libstdcxx5"  # C++ standard library
+  "openssl"
 ]
 
 [phases.install]
 commands = [
   "cd backend",
-  # Skip virtualenv and use Nix-managed environment
-  "pip install --no-cache-dir -r requirements.txt"
+  # Create isolated virtual environment
+  "python -m venv /app/venv --system-site-packages",
+  # Install packages in venv
+  "/app/venv/bin/pip install --no-cache-dir -r requirements.txt"
 ]
 
 [phases.start]
-command = "gunicorn --bind 0.0.0.0:$PORT --pythonpath . app:app"
+command = "/app/venv/bin/gunicorn --bind 0.0.0.0:$PORT --pythonpath . app:app"

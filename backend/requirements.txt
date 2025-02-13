@@ -1,3 +1,4 @@
+# Remove system packages already provided by Nix
 Flask==2.0.3
 flask-cors==3.0.10
 pandas==1.5.3
@@ -6,4 +7,3 @@ python-dotenv==0.19.2
 supabase==2.3.1
 gunicorn==20.1.0
 openpyxl==3.0.10
-numpy==1.23.5  # Pinned for scikit-learn compatibility
