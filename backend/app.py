@@ -36,7 +36,6 @@ except Exception as e:
 
 # Load tariff data
 try:
-    sys.path.append(os.path.dirname(os.path.abspath(__file__)))
     current_dir = os.path.dirname(os.path.abspath(__file__))
     excel_path = os.path.join(current_dir, 'tariffs.xlsx')
     df = pd.read_excel(excel_path)
