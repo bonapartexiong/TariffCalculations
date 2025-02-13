@@ -1,11 +1,11 @@
 [phases.setup]
-nixPkgs = ["python310", "python310Packages.pip"]
+nixPkgs = ["python310", "python310Packages.pip", "python310Packages.gunicorn"]
 
 [phases.install]
 commands = [
   "python -m pip install --upgrade pip",
-  "pip install -r requirements.txt"
+  "pip install -r backend/requirements.txt"  # Explicit path
 ]
 
 [phases.start]
-command = "gunicorn app:app"
+command = "gunicorn --pythonpath backend app:app"  # Full path spec
