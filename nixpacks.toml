@@ -8,11 +8,7 @@ nixPkgs = [
   "gcc",
   "libxml2.dev",
   "libxslt.dev",
-  "stdenv.cc.cc.lib",
-  "libjpeg",
-  "freetype.dev",
-  "libpng",
-  "libcxx"
+  "stdenv.cc.cc.lib"
 ]
 
 [phases.install]
@@ -20,8 +16,11 @@ commands = [
   "cd backend",
   "python -m venv /app/venv --system-site-packages",
   "source /app/venv/bin/activate",
-  "export C_INCLUDE_PATH=${pkgs.zlib.dev}/include:${pkgs.libffi.dev}/include",
-  "export LIBRARY_PATH=${pkgs.zlib}/lib:${pkgs.libffi}/lib",
+  
+  # Use direct Nix store paths (auto-resolved)
+  "export C_INCLUDE_PATH=/nix/store/*-zlib-dev/include:/nix/store/*-libffi-dev/include",
+  "export LIBRARY_PATH=/nix/store/*-zlib/lib:/nix/store/*-libffi/lib",
+  
   "/app/venv/bin/pip install --no-cache-dir -U pip setuptools wheel",
   "/app/venv/bin/pip install --no-cache-dir -r requirements.txt"
 ]
