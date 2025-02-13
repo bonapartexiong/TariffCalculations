@@ -8,20 +8,25 @@ nixPkgs = [
   "gcc",
   "libxml2.dev",
   "libxslt.dev",
-  "stdenv.cc.cc.lib"
+  "stdenv.cc.cc.lib",
+  "openblas",
+  "lapack",
+  "libcxx"
 ]
 
 [phases.install]
 commands = [
   "cd backend",
   "python -m venv /app/venv --system-site-packages",
-  "source /app/venv/bin/activate",
   
-  # Use direct Nix store paths (auto-resolved)
-  "export C_INCLUDE_PATH=/nix/store/*-zlib-dev/include:/nix/store/*-libffi-dev/include",
-  "export LIBRARY_PATH=/nix/store/*-zlib/lib:/nix/store/*-libffi/lib",
+  # Explicit compiler flags with exact Nix paths
+  "export C_INCLUDE_PATH=$(nix-build --no-out-link -A zlib.dev)/include:$(nix-build --no-out-link -A libffi.dev)/include",
+  "export LIBRARY_PATH=$(nix-build --no-out-link -A zlib)/lib:$(nix-build --no-out-link -A libffi)/lib",
+  "export LD_LIBRARY_PATH=$(nix-build --no-out-link -A stdenv.cc.cc.lib)/lib",
   
+  # Install packages sequentially
   "/app/venv/bin/pip install --no-cache-dir -U pip setuptools wheel",
+  "/app/venv/bin/pip install --no-cache-dir numpy==1.24.4",  # Updated for compatibility
   "/app/venv/bin/pip install --no-cache-dir -r requirements.txt"
 ]
 
