@@ -5,6 +5,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.feature_extraction.text import TfidfVectorizer
 from supabase import create_client, Client
 import os
+import sys
 from dotenv import load_dotenv
 import logging
 
@@ -35,9 +36,10 @@ except Exception as e:
 
 # Load tariff data
 try:
+    sys.path.append(os.path.dirname(os.path.abspath(__file__)))
     current_dir = os.path.dirname(os.path.abspath(__file__))
     excel_path = os.path.join(current_dir, 'tariffs.xlsx')
-    df = pd.read_excel(excel_path) 
+    df = pd.read_excel(excel_path)
     vectorizer = TfidfVectorizer(stop_words='english')
     tfidf_matrix = vectorizer.fit_transform(df['Description'])
 except Exception as e:

@@ -1,7 +1,8 @@
 {
-    "build": {
-      "nixpacks": {
-        "path": "./backend"
-      }
+  "build": {
+    "nixpacks": {
+      "path": "./backend",
+      "provider": "python"
     }
   }
+}
