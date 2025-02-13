@@ -1,9 +1,6 @@
 [phases.setup]
 nixPkgs = [
   "python310",
-  "python310Packages.pip"[phases.setup]
-nixPkgs = [
-  "python310",
   "python310Packages.virtualenv",
   "python310Packages.pip",
   "zlib",
