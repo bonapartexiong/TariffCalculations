@@ -2,21 +2,21 @@
 nixPkgs = [
   "python310",
   "python310Packages.virtualenv",
-  "zlib",
-  "libffi",
-  "openssl",
+  "zlib.dev",
+  "libffi.dev",
+  "openssl.dev",
   "gcc",
-  "libpq.dev",
-  "libxml2",
-  "libxslt",
-  "libstdcxx5"
+  "libxml2.dev",
+  "libxslt.dev",
+  "postgresql",  # Required for psycopg2 if used
+  "stdenv.cc.cc.lib"  # Critical C++ library
 ]
 
 [phases.install]
 commands = [
   "cd backend",
   "python -m venv /app/venv --system-site-packages",
-  "/app/venv/bin/pip install --no-cache-dir --upgrade pip setuptools wheel",
+  "/app/venv/bin/pip install --no-cache-dir -U pip setuptools wheel",
   "/app/venv/bin/pip install --no-cache-dir -r requirements.txt"
 ]
 
