@@ -2,18 +2,21 @@
 nixPkgs = [
   "python310",
   "python310Packages.virtualenv",
-  "python310Packages.pip",
   "zlib",
   "libffi",
-  "openssl"
+  "openssl",
+  "gcc",
+  "libpq.dev",
+  "libxml2",
+  "libxslt",
+  "libstdcxx5"
 ]
 
 [phases.install]
 commands = [
   "cd backend",
-  # Create isolated virtual environment
   "python -m venv /app/venv --system-site-packages",
-  # Install packages in venv
+  "/app/venv/bin/pip install --no-cache-dir --upgrade pip setuptools wheel",
   "/app/venv/bin/pip install --no-cache-dir -r requirements.txt"
 ]
 
