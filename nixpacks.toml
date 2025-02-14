@@ -1,16 +1,21 @@
+# nixpacks.toml
 [phases.setup]
 nixPkgs = [
-    "python310",  # Updated Python version
+    "python310",
     "python310Packages.pip",
     "python310Packages.virtualenv",
     "zlib",
     "libffi",
     "openssl",
-    "gcc"  # Adds GCC and libstdc++
+    "gcc"  # Provides libstdc++.so.6
 ]
 
 [phases.install]
 cmds = [
+    # Find GCC's lib directory and update LD_LIBRARY_PATH
+    "GCC_LIB_PATH=$(dirname $(find /nix/store -path '*/lib/libstdc++.so.6' -print -quit))",
+    "export LD_LIBRARY_PATH=\"$GCC_LIB_PATH:$LD_LIBRARY_PATH\"",
+    # Set up Python environment
     "python3.10 -m venv /app/venv",
     ". /app/venv/bin/activate && pip install --upgrade pip setuptools wheel",
     ". /app/venv/bin/activate && pip install 'numpy<1.25'",
@@ -21,7 +26,7 @@ cmds = [
 cmd = ". /app/venv/bin/activate && cd backend && /app/venv/bin/gunicorn app:app --bind 0.0.0.0:$PORT"
 
 [variables]
-PYTHONPATH = "/app/venv/lib/python3.10/site-packages"  # Updated Python version
-LD_LIBRARY_PATH = "/usr/lib:/lib:/usr/local/lib:/nix/var/nix/profiles/default/lib"  # Include Nix library path
+PYTHONPATH = "/app/venv/lib/python3.10/site-packages"
+LD_LIBRARY_PATH = "/usr/lib:/lib:/usr/local/lib:/nix/var/nix/profiles/default/lib"
 LIBRARY_PATH = "/usr/lib:/lib:/usr/local/lib:/nix/var/nix/profiles/default/lib"
 PYTHONDONTWRITEBYTECODE = "1"
