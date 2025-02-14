@@ -17,14 +17,14 @@ nixPkgs = [
 commands = [
   "rm -rf .nixpacks",
   "cd backend",
-  "python -m venv /app/venv --copies --without-pip",
-  "source /app/venv/bin/activate",
+  "python -m venv /venv --copies --without-pip",
+  "source /venv/bin/activate",
   "curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py",
   "python get-pip.py --no-cache-dir",
   "export LD_LIBRARY_PATH=$(nix-build --no-out-link -A stdenv.cc.cc.lib)/lib:$LD_LIBRARY_PATH",
-  "/app/venv/bin/pip install --no-cache-dir 'numpy==1.24.4' --only-binary=:all:",
-  "/app/venv/bin/pip install --no-cache-dir -r requirements.txt"
+  "/venv/bin/pip install --no-cache-dir 'numpy==1.24.4' --only-binary=:all:",
+  "/venv/bin/pip install --no-cache-dir -r requirements.txt"
 ]
 
 [phases.start]
-command = "/app/venv/bin/gunicorn --bind 0.0.0.0:$PORT --pythonpath . app:app"
+command = "/venv/bin/gunicorn --bind 0.0.0.0:$PORT --pythonpath . app:app"
