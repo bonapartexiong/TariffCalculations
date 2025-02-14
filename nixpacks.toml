@@ -15,6 +15,7 @@ nixPkgs = [
 
 [phases.install]
 cmds = [
+    "cd backend",
     "python -m venv /app/venv",
     "source /app/venv/bin/activate",
     ". /app/venv/bin/activate && pip install --upgrade pip setuptools wheel",
