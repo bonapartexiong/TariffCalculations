@@ -47,14 +47,17 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 if not SUPABASE_URL or not SUPABASE_KEY:
     raise ValueError("Supabase URL and Key must be set in .env")
 
+# Replace existing Supabase initialization with:
 try:
-    # Initialize Supabase client with connection test
-    supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-    # Test connection by making a simple query
+    supabase: Client = create_client(
+        supabase_url=SUPABASE_URL,
+        supabase_key=SUPABASE_KEY,
+        # Explicitly exclude proxy if not needed
+    )
     test_query = supabase.table('Calculations').select("*").limit(1).execute()
     logger.info("Supabase connection successful")
 except Exception as e:
-    logger.error(f"Failed to initialize Supabase client: {str(e)}")
+    logger.error(f"Supabase error: {str(e)}")
     raise
 
 try:
