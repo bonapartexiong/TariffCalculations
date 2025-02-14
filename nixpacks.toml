@@ -11,8 +11,11 @@ nixPkgs = [
     "libxml2.dev",
     "libxslt.dev",
     "stdenv.cc.cc.lib",
-    "stdenv.cc.cc",  # Added for libstdc++
-    "glibc"          # Added for additional runtime libraries
+    "stdenv.cc.cc",
+    "glibc",
+    "gcc-unwrapped",
+    "libstdc++",
+    "gcc.cc.lib"
 ]
 
 [phases.install]
@@ -22,7 +25,9 @@ cmds = [
     "python -m venv /app/venv",
     "source /app/venv/bin/activate",
     ". /app/venv/bin/activate && pip install --upgrade pip setuptools wheel && pip install 'numpy==1.24.4'",
-    ". /app/venv/bin/activate && cd backend && pip install -r requirements.txt"
+    ". /app/venv/bin/activate && cd backend && pip install -r requirements.txt",
+    # Add command to verify library presence
+    "ls -l /nix/store/*-glibc-*/lib/libstdc++.so.6 || true"
 ]
 
 [start]
