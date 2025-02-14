@@ -9,6 +9,24 @@ import sys
 from dotenv import load_dotenv
 import logging
 
+# After your imports, add:
+def initialize_app():
+    """Initialize app with proper error handling for Railway environment"""
+    try:
+        app = Flask(__name__)
+        CORS(app)
+        
+        if os.getenv("RAILWAY_ENVIRONMENT"):
+            app.config['PROPAGATE_EXCEPTIONS'] = True
+            logger.info("Running in Railway environment")
+        
+        return app
+    except Exception as e:
+        logger.critical(f"Failed to initialize app: {str(e)}")
+        sys.exit(1)
+
+app = initialize_app()
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -17,6 +35,10 @@ load_dotenv()  # Load environment variables
 
 app = Flask(__name__)
 CORS(app)
+
+# Railway specific configuration
+if os.getenv("RAILWAY_ENVIRONMENT"):
+    app.config['PROPAGATE_EXCEPTIONS'] = True
 
 # Supabase configuration with validation
 SUPABASE_URL = os.getenv("SUPABASE_URL")
@@ -34,10 +56,11 @@ except Exception as e:
     logger.error(f"Failed to initialize Supabase client: {str(e)}")
     raise
 
-# Load tariff data
 try:
     current_dir = os.path.dirname(os.path.abspath(__file__))
     excel_path = os.path.join(current_dir, 'tariffs.xlsx')
+    if not os.path.exists(excel_path):
+        raise FileNotFoundError(f"Tariff file not found at {excel_path}")
     df = pd.read_excel(excel_path)
     vectorizer = TfidfVectorizer(stop_words='english')
     tfidf_matrix = vectorizer.fit_transform(df['Description'])
@@ -77,6 +100,10 @@ def log_to_supabase(description: str, value: float):
     except Exception as e:
         logger.error(f"Failed to log to Supabase: {str(e)}")
         raise
+
+@app.route('/health', methods=['GET'])
+def health_check():
+    return jsonify({"status": "healthy"}), 200
 
 @app.route('/calculate', methods=['POST'])
 def calculate_duty():
@@ -134,4 +161,5 @@ def calculate_duty():
         return jsonify({"error": "Internal server error"}), 500
 
 if __name__ == '__main__':
-    app.run(debug=False)
+    port = int(os.getenv("PORT", 5000))
+    app.run(host='0.0.0.0', port=port, debug=False)
