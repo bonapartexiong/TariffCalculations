@@ -19,7 +19,7 @@ cmds = [
     "ls -la backend/",
     "python -m venv /app/venv",
     "source /app/venv/bin/activate",
-    ". /app/venv/bin/activate && pip install --upgrade pip setuptools wheel",
+    ". /app/venv/bin/activate && pip install --upgrade pip setuptools wheel && pip install 'numpy==1.24.4'",
     ". /app/venv/bin/activate && cd backend && pip install -r requirements.txt"
 ]
 
