@@ -11,6 +11,13 @@ nixPkgs = [
     "gcc"
 ]
 
+[phases.build]
+cmds = [
+    "mkdir -p /app/lib",
+    "cp $(find /nix -name libstdc++.so.6 | head -n 1) /app/lib/",
+    "echo 'export LD_LIBRARY_PATH=/app/lib:$LD_LIBRARY_PATH' >> /app/venv/bin/activate"
+]
+
 [phases.install]
 cmds = [
     "python -m venv /app/venv",
@@ -20,3 +27,6 @@ cmds = [
 
 [start]
 cmd = ". /app/venv/bin/activate && cd backend && /app/venv/bin/gunicorn app:app --bind 0.0.0.0:$PORT"
+
+[variables]
+LD_LIBRARY_PATH = "/app/lib"
