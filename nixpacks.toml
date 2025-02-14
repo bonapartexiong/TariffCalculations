@@ -14,13 +14,14 @@ nixPkgs = [
 ]
 
 [phases.install]
+workdir = "/app/backend"
 cmds = [
-    "cd backend",
-    "python -m venv /app/venv",
-    "source /app/venv/bin/activate",
-    ". /app/venv/bin/activate && pip install --upgrade pip setuptools wheel",
-    ". /app/venv/bin/activate && pip install -r requirements.txt"
+    "python -m venv ../venv",
+    "source ../venv/bin/activate",
+    ". ../venv/bin/activate && pip install --upgrade pip setuptools wheel",
+    ". ../venv/bin/activate && pip install -r requirements.txt"
 ]
 
 [start]
-cmd = "cd backend && gunicorn app:app --bind 0.0.0.0:$PORT"
+workdir = "/app/backend"
+cmd = "gunicorn app:app --bind 0.0.0.0:$PORT"
