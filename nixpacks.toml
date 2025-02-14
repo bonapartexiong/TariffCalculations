@@ -7,14 +7,16 @@ nixPkgs = [
     "python310Packages.pip",
     "zlib.dev",
     "libffi.dev",
-    "openssl.dev",
-    "gcc"
+    "openssl.dev"
 ]
 
 [phases.build]
 cmds = [
+    # Install gcc-12 which should be compatible with GLIBC 2.37
+    "nix-env -iA nixpkgs.gcc12",
     "mkdir -p /app/lib",
-    "cp $(find /nix -name libstdc++.so.6 | head -n 1) /app/lib/",
+    # Copy specifically from gcc12's lib directory
+    "find /nix/store -name libstdc++.so.6 -path '*/gcc12/*' -exec cp {} /app/lib/ \\;",
     "echo 'export LD_LIBRARY_PATH=/app/lib:$LD_LIBRARY_PATH' >> /app/venv/bin/activate"
 ]
 
