@@ -9,16 +9,20 @@ import sys
 from dotenv import load_dotenv
 import logging
 
-# After your imports, add:
+# Configure logging FIRST
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)  # Define logger here
+
 def initialize_app():
-    """Initialize app with proper error handling for Railway environment"""
+    """Initialize app with proper error handling"""
     try:
         app = Flask(__name__)
         CORS(app)
         
+        # Remove duplicate Flask app initialization
         if os.getenv("RAILWAY_ENVIRONMENT"):
             app.config['PROPAGATE_EXCEPTIONS'] = True
-            logger.info("Running in Railway environment")
+            logger.info("Running in Railway environment")  # Now can use logger
         
         return app
     except Exception as e:
@@ -27,11 +31,8 @@ def initialize_app():
 
 app = initialize_app()
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-load_dotenv()  # Load environment variables
+# Load environment variables AFTER app initialization
+load_dotenv()
 
 app = Flask(__name__)
 CORS(app)
