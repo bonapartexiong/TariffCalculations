@@ -24,4 +24,4 @@ cmds = [
 ]
 
 [start]
-cmd = "cd backend && gunicorn app:app --bind 0.0.0.0:$PORT"
+cmd = ". /app/venv/bin/activate && cd backend && /app/venv/bin/gunicorn app:app --bind 0.0.0.0:$PORT"
