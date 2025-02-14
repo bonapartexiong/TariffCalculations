@@ -1,33 +1,21 @@
 # nixpacks.toml
 [phases.setup]
 nixPkgs = [
+    "stdenv",
     "python310",
     "python310Packages.virtualenv",
     "python310Packages.pip",
     "zlib.dev",
     "libffi.dev",
     "openssl.dev",
-    "gcc",
-    "libxml2.dev",
-    "libxslt.dev",
-    "stdenv.cc.cc.lib",
-    "stdenv.cc.cc",
-    "glibc",
-    "gcc-unwrapped",
-    "libstdc++",
-    "gcc.cc.lib"
+    "gcc"
 ]
 
 [phases.install]
 cmds = [
-    "ls -la",
-    "ls -la backend/",
     "python -m venv /app/venv",
-    "source /app/venv/bin/activate",
     ". /app/venv/bin/activate && pip install --upgrade pip setuptools wheel && pip install 'numpy==1.24.4'",
-    ". /app/venv/bin/activate && cd backend && pip install -r requirements.txt",
-    # Add command to verify library presence
-    "ls -l /nix/store/*-glibc-*/lib/libstdc++.so.6 || true"
+    ". /app/venv/bin/activate && cd backend && pip install -r requirements.txt"
 ]
 
 [start]
