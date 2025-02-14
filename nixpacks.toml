@@ -1,27 +1,41 @@
-# nixpacks.toml
 [phases.setup]
 nixPkgs = [
-    "python310",
-    "python310Packages.virtualenv",
-    "python310Packages.pip",
-    "zlib.dev",
-    "libffi.dev",
-    "openssl.dev",
-    "gcc",
-    "libxml2.dev",
-    "libxslt.dev",
-    "stdenv.cc.cc.lib"
+  "python310",
+  "python310Packages.virtualenv",
+  "zlib.dev",
+  "libffi.dev",
+  "openssl.dev",
+  "gcc",
+  "libxml2.dev",
+  "libxslt.dev",
+  "stdenv.cc.cc.lib",  # Provides libstdc++
+  "openblas",
+  "lapack"
 ]
 
 [phases.install]
-cmds = [
-    "ls -la",
-    "ls -la backend/",
-    "python -m venv /app/venv",
-    "source /app/venv/bin/activate",
-    ". /app/venv/bin/activate && pip install --upgrade pip setuptools wheel && pip install 'numpy==1.24.4'",
-    ". /app/venv/bin/activate && cd backend && pip install -r requirements.txt"
+commands = [
+  # Clean environment
+  "rm -rf .nixpacks",
+  
+  # Install core packages
+  "cd backend",
+  "python -m venv /app/venv --copies --without-pip",
+  "source /app/venv/bin/activate",
+  
+  # Install pip manually
+  "curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py",
+  "python get-pip.py --no-cache-dir",
+  
+  # Set library paths
+  "export LD_LIBRARY_PATH=$(nix-build --no-out-link -A stdenv.cc.cc.lib)/lib:$LD_LIBRARY_PATH",
+  
+  # Install numpy with OpenBLAS support
+  "/app/venv/bin/pip install --no-cache-dir 'numpy==1.24.4' --only-binary=:all:",
+  
+  # Install remaining requirements
+  "/app/venv/bin/pip install --no-cache-dir -r requirements.txt"
 ]
 
-[start]
-cmd = ". /app/venv/bin/activate && cd backend && /app/venv/bin/gunicorn app:app --bind 0.0.0.0:$PORT"
+[phases.start]
+command = "/app/venv/bin/gunicorn --bind 0.0.0.0:$PORT --pythonpath backend app:app"
