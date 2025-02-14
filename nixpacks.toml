@@ -1,16 +1,24 @@
 # nixpacks.toml
 [phases.setup]
-nixPkgs = ["python310", "python310Packages.virtualenv", "zlib.dev", "libffi.dev", "openssl.dev", "gcc", "libxml2.dev", "libxslt.dev", "stdenv.cc.cc.lib"]
+nixPkgs = [
+    "python310",
+    "python310Packages.virtualenv",
+    "python310Packages.pip",
+    "zlib.dev",
+    "libffi.dev",
+    "openssl.dev",
+    "gcc",
+    "libxml2.dev",
+    "libxslt.dev",
+    "stdenv.cc.cc.lib"
+]
 
 [phases.install]
 cmds = [
-    "rm -rf .nixpacks",
-    "cd backend",
-    "python -m venv /app/venv --copies --without-pip",
+    "python -m venv /app/venv",
     "source /app/venv/bin/activate",
-    "curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py",
-    "python get-pip.py --no-cache-dir",
-    "/app/venv/bin/pip install --no-cache-dir -r requirements.txt"
+    ". /app/venv/bin/activate && pip install --upgrade pip setuptools wheel",
+    ". /app/venv/bin/activate && pip install -r requirements.txt"
 ]
 
 [start]
