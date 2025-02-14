@@ -14,7 +14,7 @@ nixPkgs = [
 ]
 
 [phases.install]
-workdir = "/app/backend"
+workdir = "/backend"
 cmds = [
     "python -m venv ../venv",
     "source ../venv/bin/activate",
@@ -23,5 +23,5 @@ cmds = [
 ]
 
 [start]
-workdir = "/app/backend"
+workdir = "/backend"
 cmd = "gunicorn app:app --bind 0.0.0.0:$PORT"
