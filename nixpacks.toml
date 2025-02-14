@@ -1,30 +1,17 @@
 # nixpacks.toml
 [phases.setup]
-aptPkgs = [
-    "libstdc++6",
-    "build-essential",
-    "python3-dev",
-    "libpq-dev"
-]
-
 nixPkgs = [
     "gcc",
     "glibc",
-    "libffi",
-    "openssl",
     "python310",
     "python310Packages.pip",
-    "python310Packages.virtualenv",
-    "zlib"
+    "python310Packages.virtualenv"
 ]
 
-[phases.install]
+[phases.build]
 cmds = [
-    "ldconfig",
-    "python -m venv /app/venv",
-    ". /app/venv/bin/activate && pip install --upgrade pip setuptools wheel",
-    ". /app/venv/bin/activate && pip install 'numpy==1.24.4'",
-    ". /app/venv/bin/activate && cd backend && pip install -r requirements.txt"
+    "chmod +x build.sh",
+    "./build.sh"
 ]
 
 [start]
@@ -32,5 +19,6 @@ cmd = ". /app/venv/bin/activate && cd backend && /app/venv/bin/gunicorn app:app 
 
 [variables]
 PYTHONPATH = "/app/venv/lib/python3.10/site-packages"
-LD_LIBRARY_PATH = "/usr/lib:/lib:/usr/local/lib"
-LIBRARY_PATH = "/usr/lib:/lib:/usr/local/lib"
+LD_LIBRARY_PATH = "/usr/lib/x86_64-linux-gnu:/usr/lib:/lib:/usr/local/lib"
+LIBRARY_PATH = "/usr/lib/x86_64-linux-gnu:/usr/lib:/lib:/usr/local/lib"
+DEBIAN_FRONTEND = "noninteractive"
