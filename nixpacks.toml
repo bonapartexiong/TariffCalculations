@@ -10,11 +10,13 @@ nixPkgs = [
     "openssl",
     "gcc",
     "glibc",
-    "stdenv.cc"
+    "stdenv.cc",
+    "libgcc"
 ]
 
 [phases.install]
 cmds = [
+    "ln -s ${pkgs.stdenv.cc.cc.lib}/lib/libstdc++.so.6 /usr/lib/libstdc++.so.6",
     "python -m venv /app/venv",
     ". /app/venv/bin/activate && pip install --upgrade pip setuptools wheel",
     ". /app/venv/bin/activate && pip install 'numpy==1.24.4'",
@@ -26,5 +28,6 @@ cmd = ". /app/venv/bin/activate && cd backend && /app/venv/bin/gunicorn app:app 
 
 [variables]
 PYTHONPATH = "/app/venv/lib/python3.10/site-packages"
-LD_LIBRARY_PATH = "/lib:/usr/lib:/usr/local/lib:${pkgs.stdenv.cc.cc.lib}/lib"
-LIBRARY_PATH = "/lib:/usr/lib:/usr/local/lib:${pkgs.stdenv.cc.cc.lib}/lib"
+LD_LIBRARY_PATH = "/usr/lib:${pkgs.stdenv.cc.cc.lib}/lib:/lib:/usr/local/lib"
+LIBRARY_PATH = "/usr/lib:${pkgs.stdenv.cc.cc.lib}/lib:/lib:/usr/local/lib"
+NIXPACKS_LIBS = "${pkgs.stdenv.cc.cc.lib}/lib"
