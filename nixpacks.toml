@@ -7,23 +7,18 @@ nixPkgs = [
     "python310Packages.pip",
     "zlib.dev",
     "libffi.dev",
-    "openssl.dev"
-]
-
-[phases.build]
-cmds = [
-    # Install gcc-12 which should be compatible with GLIBC 2.37
-    "nix-env -iA nixpkgs.gcc12",
-    "mkdir -p /app/lib",
-    # Copy specifically from gcc12's lib directory
-    "find /nix/store -name libstdc++.so.6 -path '*/gcc12/*' -exec cp {} /app/lib/ \\;",
-    "echo 'export LD_LIBRARY_PATH=/app/lib:$LD_LIBRARY_PATH' >> /app/venv/bin/activate"
+    "openssl.dev",
+    "gcc",
+    "libstdc++",
+    "glibc"
 ]
 
 [phases.install]
 cmds = [
     "python -m venv /app/venv",
-    ". /app/venv/bin/activate && pip install --upgrade pip setuptools wheel && pip install 'numpy==1.24.4'",
+    ". /app/venv/bin/activate && pip install --upgrade pip setuptools wheel",
+    # Install numpy with specific compiler flags
+    ". /app/venv/bin/activate && CFLAGS='-std=c99' CXXFLAGS='-std=c++11' pip install 'numpy==1.24.4'",
     ". /app/venv/bin/activate && cd backend && pip install -r requirements.txt"
 ]
 
@@ -31,4 +26,5 @@ cmds = [
 cmd = ". /app/venv/bin/activate && cd backend && /app/venv/bin/gunicorn app:app --bind 0.0.0.0:$PORT"
 
 [variables]
-LD_LIBRARY_PATH = "/app/lib"
+LIBRARY_PATH = "/lib:/usr/lib:/usr/local/lib"
+LD_LIBRARY_PATH = "/lib:/usr/lib:/usr/local/lib"
