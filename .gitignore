@@ -6,15 +6,14 @@
 !backend/*
 !backend/**/*
 
-# Ignore Python specific files even in backend
+# Ignore Python specific files
 backend/__pycache__/
 backend/*.pyc
 backend/*.pyo
 backend/*.pyd
-backend/.Python
-backend/env/
 backend/venv/
 backend/.env
 
-# OS specific
-.DS_Store
+# Just to be extra safe, explicitly ignore frontend
+frontend/
+frontend/node_modules/
