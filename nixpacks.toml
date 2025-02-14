@@ -1,33 +1,17 @@
+# nixpacks.toml
 [phases.setup]
-nixPkgs = [
-  "python310",
-  "python310Packages.virtualenv",
-  "zlib.dev",
-  "libffi.dev",
-  "openssl.dev",
-  "gcc",
-  "libxml2.dev",
-  "libxslt.dev",
-  "stdenv.cc.cc.lib"
-]
+nixPkgs = ["python310", "python310Packages.virtualenv", "zlib.dev", "libffi.dev", "openssl.dev", "gcc", "libxml2.dev", "libxslt.dev", "stdenv.cc.cc.lib"]
 
 [phases.install]
-commands = [
-  # Clean environment
-  "rm -rf .nixpacks",
-  
-  # Install core packages
-  "cd backend",
-  "python -m venv /app/venv --copies --without-pip",
-  "source /app/venv/bin/activate",
-  
-  # Install pip manually
-  "curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py",
-  "python get-pip.py --no-cache-dir",
-  
-  # Install requirements
-  "/app/venv/bin/pip install --no-cache-dir -r requirements.txt"
+cmds = [
+    "rm -rf .nixpacks",
+    "cd backend",
+    "python -m venv /app/venv --copies --without-pip",
+    "source /app/venv/bin/activate",
+    "curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py",
+    "python get-pip.py --no-cache-dir",
+    "/app/venv/bin/pip install --no-cache-dir -r requirements.txt"
 ]
 
-[phases.start]
-command = "/app/venv/bin/gunicorn --bind 0.0.0.0:$PORT --pythonpath . app:app"
+[start]
+cmd = "gunicorn app:app --bind 0.0.0.0:$PORT"
