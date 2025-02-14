@@ -13,8 +13,8 @@ nixPkgs = [
 cmds = [
     "python3.10 -m venv /app/venv",
     ". /app/venv/bin/activate && pip install --upgrade pip setuptools wheel",
-    ". /app/venv/bin/activate && pip install 'numpy<1.25'",
-    ". /app/venv/bin/activate && cd backend && pip install -r requirements.txt"
+    ". /app/venv/bin/activate && pip install numpy==1.21.6 --no-cache-dir",
+    ". /app/venv/bin/activate && cd backend && pip install -r requirements.txt --no-cache-dir"
 ]
 
 [start]
