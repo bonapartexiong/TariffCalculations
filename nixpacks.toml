@@ -6,7 +6,7 @@ nixPkgs = [
     "zlib",
     "libffi",
     "openssl",
-    "gcc12"  # Use GCC 12 (compatible with GLIBC 2.37)
+    "gcc12"  # Provides libstdc++.so.6 compatible with GLIBC 2.37
 ]
 
 [phases.install]
@@ -18,10 +18,15 @@ cmds = [
 ]
 
 [start]
-cmd = ". /app/venv/bin/activate && cd backend && /app/venv/bin/gunicorn app:app --bind 0.0.0.0:$PORT"
+cmd = '''
+    export GCC_LIB_PATH=$(find /nix/store -wholename "*/gcc-12*/lib" -type d -print -quit) &&
+    export LD_LIBRARY_PATH="$GCC_LIB_PATH:$LD_LIBRARY_PATH" &&
+    . /app/venv/bin/activate &&
+    cd backend &&
+    /app/venv/bin/gunicorn app:app --bind 0.0.0.0:$PORT
+'''
 
 [variables]
 PYTHONPATH = "/app/venv/lib/python3.10/site-packages"
 LD_LIBRARY_PATH = "/nix/var/nix/profiles/default/lib:/usr/lib:/lib:/usr/local/lib"
-LIBRARY_PATH = "/nix/var/nix/profiles/default/lib:/usr/lib:/lib:/usr/local/lib"
 PYTHONDONTWRITEBYTECODE = "1"
