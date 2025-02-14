@@ -1,5 +1,20 @@
-# Nix artifacts
-.nixpacks/
-result/
-.venv/
-frontend/
+# Ignore everything
+*
+
+# But don't ignore the backend folder and its contents
+!backend/
+!backend/*
+!backend/**/*
+
+# Ignore Python specific files even in backend
+backend/__pycache__/
+backend/*.pyc
+backend/*.pyo
+backend/*.pyd
+backend/.Python
+backend/env/
+backend/venv/
+backend/.env
+
+# OS specific
+.DS_Store
