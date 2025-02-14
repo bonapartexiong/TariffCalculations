@@ -1,24 +1,20 @@
 # nixpacks.toml
 [phases.setup]
 nixPkgs = [
-    "stdenv.cc.cc.lib",
-    "python310",
-    "python310Packages.virtualenv",
-    "python310Packages.pip",
-    "zlib",
-    "libffi",
-    "openssl",
     "gcc",
     "glibc",
-    "stdenv.cc",
+    "libffi",
     "libgcc",
-    "libstdc++"
+    "openssl",
+    "python310",
+    "python310Packages.pip",
+    "python310Packages.virtualenv",
+    "stdenv.cc",
+    "zlib"
 ]
 
 [phases.install]
 cmds = [
-    "mkdir -p /usr/lib",
-    "find /nix/store -name 'libstdc++.so.6' -exec cp {} /usr/lib/ \\;",
     "python -m venv /app/venv",
     ". /app/venv/bin/activate && pip install --upgrade pip setuptools wheel",
     ". /app/venv/bin/activate && pip install 'numpy==1.24.4'",
@@ -30,5 +26,5 @@ cmd = ". /app/venv/bin/activate && cd backend && /app/venv/bin/gunicorn app:app 
 
 [variables]
 PYTHONPATH = "/app/venv/lib/python3.10/site-packages"
-LD_LIBRARY_PATH = "/usr/lib:/nix/store:/lib:/usr/local/lib"
-LIBRARY_PATH = "/usr/lib:/nix/store:/lib:/usr/local/lib"
+LD_LIBRARY_PATH = "/usr/lib:/lib:/usr/local/lib"
+LIBRARY_PATH = "/usr/lib:/lib:/usr/local/lib"
