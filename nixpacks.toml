@@ -1,24 +1,23 @@
 # nixpacks.toml
 [phases.setup]
 nixPkgs = [
-    "stdenv",
+    "stdenv.cc.cc.lib",
     "python310",
     "python310Packages.virtualenv",
     "python310Packages.pip",
-    "zlib.dev",
-    "libffi.dev",
-    "openssl.dev",
+    "zlib",
+    "libffi",
+    "openssl",
     "gcc",
     "glibc",
-    "libstdc++",
-    "stdenv.cc.cc.lib"
+    "stdenv.cc"
 ]
 
 [phases.install]
 cmds = [
     "python -m venv /app/venv",
     ". /app/venv/bin/activate && pip install --upgrade pip setuptools wheel",
-    ". /app/venv/bin/activate && CFLAGS='-std=c99' CXXFLAGS='-std=c++11' pip install 'numpy==1.24.4'",
+    ". /app/venv/bin/activate && pip install 'numpy==1.24.4'",
     ". /app/venv/bin/activate && cd backend && pip install -r requirements.txt"
 ]
 
@@ -26,5 +25,6 @@ cmds = [
 cmd = ". /app/venv/bin/activate && cd backend && /app/venv/bin/gunicorn app:app --bind 0.0.0.0:$PORT"
 
 [variables]
-LIBRARY_PATH = "/lib:/usr/lib:/usr/local/lib"
-LD_LIBRARY_PATH = "/lib:/usr/lib:/usr/local/lib"
+PYTHONPATH = "/app/venv/lib/python3.10/site-packages"
+LD_LIBRARY_PATH = "/lib:/usr/lib:/usr/local/lib:${pkgs.stdenv.cc.cc.lib}/lib"
+LIBRARY_PATH = "/lib:/usr/lib:/usr/local/lib:${pkgs.stdenv.cc.cc.lib}/lib"
