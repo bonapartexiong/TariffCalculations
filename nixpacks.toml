@@ -15,16 +15,27 @@ nixPkgs = [
 
 [phases.install]
 commands = [
+  # Clean environment
   "rm -rf .nixpacks",
+  
+  # Install core packages
   "cd backend",
-  "python -m venv /venv --copies --without-pip",
-  "source /venv/bin/activate",
+  "python -m venv /app/venv --copies --without-pip",
+  "source /app/venv/bin/activate",
+  
+  # Install pip manually
   "curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py",
   "python get-pip.py --no-cache-dir",
+  
+  # Set library paths
   "export LD_LIBRARY_PATH=$(nix-build --no-out-link -A stdenv.cc.cc.lib)/lib:$LD_LIBRARY_PATH",
-  "/venv/bin/pip install --no-cache-dir 'numpy==1.24.4' --only-binary=:all:",
-  "/venv/bin/pip install --no-cache-dir -r requirements.txt"
+  
+  # Install numpy with OpenBLAS support
+  "/app/venv/bin/pip install --no-cache-dir 'numpy==1.24.4' --only-binary=:all:",
+  
+  # Install remaining requirements
+  "/app/venv/bin/pip install --no-cache-dir -r requirements.txt"
 ]
 
 [phases.start]
-command = "/venv/bin/gunicorn --bind 0.0.0.0:$PORT --pythonpath . app:app"
+command = "/app/venv/bin/gunicorn --bind 0.0.0.0:$PORT --pythonpath backend app:app"
