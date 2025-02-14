@@ -6,13 +6,11 @@ nixPkgs = [
     "zlib",
     "libffi",
     "openssl",
-    "gcc",       # Provides libstdc++.so.6
-    "glibc"      # Additional compatibility
+    "gcc12"  # Use GCC 12 (compatible with GLIBC 2.37)
 ]
 
 [phases.install]
 cmds = [
-    # Set up Python environment
     "python3.10 -m venv /app/venv",
     ". /app/venv/bin/activate && pip install --upgrade pip setuptools wheel",
     ". /app/venv/bin/activate && pip install 'numpy<1.25'",
@@ -20,7 +18,7 @@ cmds = [
 ]
 
 [start]
-cmd = "bash -c 'export LD_LIBRARY_PATH=$(dirname $(find /nix/store -path \"*/lib/libstdc++.so.6\" -print -quit)):$LD_LIBRARY_PATH && . /app/venv/bin/activate && cd backend && /app/venv/bin/gunicorn app:app --bind 0.0.0.0:$PORT'"
+cmd = ". /app/venv/bin/activate && cd backend && /app/venv/bin/gunicorn app:app --bind 0.0.0.0:$PORT"
 
 [variables]
 PYTHONPATH = "/app/venv/lib/python3.10/site-packages"
