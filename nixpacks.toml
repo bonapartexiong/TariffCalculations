@@ -1,20 +1,26 @@
 # nixpacks.toml
 [phases.setup]
+aptPkgs = [
+    "libstdc++6",
+    "build-essential",
+    "python3-dev",
+    "libpq-dev"
+]
+
 nixPkgs = [
     "gcc",
     "glibc",
     "libffi",
-    "libgcc",
     "openssl",
     "python310",
     "python310Packages.pip",
     "python310Packages.virtualenv",
-    "stdenv.cc",
     "zlib"
 ]
 
 [phases.install]
 cmds = [
+    "ldconfig",
     "python -m venv /app/venv",
     ". /app/venv/bin/activate && pip install --upgrade pip setuptools wheel",
     ". /app/venv/bin/activate && pip install 'numpy==1.24.4'",
