@@ -22,5 +22,7 @@ cmds = [
     ". /app/venv/bin/activate && pip install -r requirements.txt"
 ]
 
-[start]
-cmd = "gunicorn app:app --bind 0.0.0.0:$PORT"
+[
+start
+]
+cmd = "cd backend && gunicorn app:app --bind 0.0.0.0:$PORT"
