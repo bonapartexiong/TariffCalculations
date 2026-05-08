@@ -1,0 +1,9 @@
+[build]
+  command = "cd TariffUI && npm install && npm run build"
+  publish = "TariffUI/.next"
+
+[build.environment]
+  NODE_VERSION = "18"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"

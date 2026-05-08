@@ -1,121 +1,64 @@
-# Deployment Guide
+# Tariff Calculation API
 
-## Overview
-This guide covers deploying the refactored Tariff Calculation API to production.
+Customs duty calculation API that matches product descriptions against a tariff database
+using TF-IDF vectorization and cosine similarity.
 
-## Prerequisites
-- Python 3.9+
-- Supabase account with `Calculations` table set up
-- `tariffs.xlsx` file in the project root
+A **Next.js frontend** (`TariffUI/`) calls a **Flask backend** (`backend/`) deployed
+on Railway (or standalone). The frontend is designed for deployment on **Netlify**.
 
-## Supabase Table Schema
+---
 
-Create a table named `Calculations` with the following schema:
+## Quick Start
 
-```sql
-CREATE TABLE Calculations (
-  id BIGSERIAL PRIMARY KEY,
-  description TEXT NOT NULL,
-  value DECIMAL(15, 2) NOT NULL,
-  request_id UUID NOT NULL,
-  timestamp TIMESTAMPTZ DEFAULT NOW(),
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
+### Backend
 
--- Add index for faster queries
-CREATE INDEX idx_calculations_timestamp ON Calculations(timestamp);
-CREATE INDEX idx_calculations_request_id ON Calculations(request_id);
-```
-
-## Local Development
-
-1. **Clone the repository**
 ```bash
 git clone https://github.com/bonapartexiong/TariffCalculations.git
 cd TariffCalculations
+
+python3.10 -m venv venv
+source venv/bin/activate
+pip install -r backend/requirements.txt
+cp .env.example .env   # edit with real Supabase credentials
+
+cd backend && python app.py
+# → http://localhost:5000
 ```
 
-2. **Create virtual environment**
+### Frontend
+
 ```bash
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+cd TariffUI
+npm install
+cp .env.example .env.local   # or set NEXT_PUBLIC_API_URL
+npm run dev
+# → http://localhost:3000
 ```
 
-3. **Install dependencies**
-```bash
-pip install -r requirements.txt
-```
-
-4. **Configure environment variables**
-```bash
-cp .env.example .env
-# Edit .env with your actual values
-```
-
-5. **Run the application**
-```bash
-python app.py
-```
-
-The API will be available at `http://localhost:5000`
-
-## Production Deployment (Railway)
-
-### Method 1: Railway CLI
-
-1. **Install Railway CLI**
-```bash
-npm i -g @railway/cli
-```
-
-2. **Login to Railway**
-```bash
-railway login
-```
-
-3. **Initialize project**
-```bash
-railway init
-```
-
-4. **Set environment variables**
-```bash
-railway variables set SUPABASE_URL="your-url"
-railway variables set SUPABASE_KEY="your-key"
-railway variables set ALLOWED_ORIGINS="https://yourdomain.com"
-railway variables set FLASK_DEBUG="False"
-```
-
-5. **Deploy**
-```bash
-railway up
-```
-
-### Method 2: GitHub Integration
-
-1. Connect your GitHub repository to Railway
-2. Set environment variables in Railway dashboard
-3. Railway will automatically deploy on push to main branch
-
-## Procfile for Railway
-
-Create a `Procfile` in your project root:
-
-```
-web: gunicorn -w 4 -b 0.0.0.0:$PORT app:app --timeout 120 --log-level info
-```
+---
 
 ## Environment Variables
 
-Required environment variables:
+### Backend (`.env`)
 
 | Variable | Description | Example |
 |----------|-------------|---------|
-| `SUPABASE_URL` | Your Supabase project URL | `https://xxx.supabase.co` |
-| `SUPABASE_KEY` | Your Supabase anon/public key | `eyJhbGc...` |
-| `ALLOWED_ORIGINS` | Comma-separated CORS origins | `https://yoursite.com` |
-| `PORT` | Port to run on (set by Railway) | `5000` |
+| `SUPABASE_URL` | Supabase project URL | `https://xxx.supabase.co` |
+| `SUPABASE_KEY` | Supabase anon/public key | `eyJhbGc...` |
+| `ALLOWED_ORIGINS` | Comma-separated CORS origins | `http://localhost:3000,https://you.netlify.app` |
+| `PORT` | Port to run on | `5000` |
 | `FLASK_DEBUG` | Enable debug mode (dev only) | `False` |
+
+The app starts even if Supabase is unavailable — calculation logging is skipped until
+the connection recovers.
+
+### Frontend (`TariffUI/.env.local`)
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `NEXT_PUBLIC_API_URL` | Backend API base URL | `http://localhost:5000` or `https://your-api.railway.app` |
+
+---
 
 ## API Endpoints
 
@@ -124,12 +67,11 @@ Required environment variables:
 GET /v1/health
 ```
 
-Response:
 ```json
 {
   "status": "healthy",
   "version": "v1",
-  "timestamp": "2025-10-18T12:00:00Z",
+  "timestamp": "2025-01-01T00:00:00Z",
   "checks": {
     "tariff_data": true,
     "ml_model": true,
@@ -137,6 +79,8 @@ Response:
   }
 }
 ```
+
+Returns `503` when any check fails (`"status": "degraded"`).
 
 ### Calculate Tariff
 ```http
@@ -149,97 +93,105 @@ Content-Type: application/json
 }
 ```
 
-Response:
-```json
-{
-  "matched_description": "Handbags, with outer surface of leather",
-  "confidence": 0.856,
-  "tariff": 0.10,
-  "duty": 50.00,
-  "merchandise_processing_fee": 1.73,
-  "harbor_maintenance_fee": 0.63,
-  "subtotal": 52.36,
-  "footnote": "For precise tariff quotations...",
-  "request_id": "123e4567-e89b-12d3-a456-426614174000"
-}
-```
+Request body is limited to **1 MB**.
 
-### Rate Limits
+---
+
+## Rate Limits
+
 - 100 requests per hour per IP
 - 20 requests per minute per IP
-- 10 requests per minute for `/v1/calculate` endpoint
+- 10 requests per minute for `POST /v1/calculate`
 
-## Monitoring
+> **Production note:** rate limits use in-memory storage. For multi-worker deployments
+> switch to Redis by changing `storage_uri` in `backend/app.py`. The app includes
+> `ProxyFix` middleware so client IPs are correct behind CDNs and load balancers.
 
-### Key Metrics to Monitor
-- Request rate and latency
-- Error rates (4xx, 5xx)
-- Supabase connection failures
-- ML model inference time
-- Memory usage
+---
 
-### Recommended Tools
-- Railway built-in metrics
-- Supabase dashboard for database monitoring
-- Sentry for error tracking
-- Prometheus + Grafana for custom metrics
+## Project Structure
 
-## Security Checklist
+```
+├── backend/                  # Flask API
+│   ├── app.py                # Application factory & entry point
+│   ├── config.py             # Constants, logging setup
+│   ├── models.py             # Dataclasses (ProductMatch, FeeBreakdown)
+│   ├── exceptions.py         # Custom exception hierarchy
+│   ├── validators.py         # Input validation (whitelist-based)
+│   ├── middleware.py          # Request ID, security headers
+│   ├── requirements.txt      # Python dependencies
+│   ├── routes/
+│   │   ├── health.py         # GET /v1/health
+│   │   └── calculate.py      # POST /v1/calculate
+│   └── services/
+│       ├── tariff_data.py    # Excel loading, TF-IDF matching
+│       ├── fee_calculator.py # Duty/MPF/HMF computation (Decimal)
+│       └── calculation_logger.py  # Supabase persistence
+├── TariffUI/                 # Next.js frontend
+│   ├── pages/index.js        # Main calculator UI
+│   ├── next.config.js        # Next.js configuration
+│   ├── package.json          # Dependencies
+│   └── .env.example          # Frontend env template
+├── netlify.toml              # Netlify build configuration
+├── Dockerfile                # Backend Docker image
+├── Procfile                  # Railway / generic process runner
+├── nixpacks.toml             # Railway Nixpacks builder
+└── tariffs.xlsx              # Tariff data (Description + Tariff columns)
+```
 
-- ✅ Rate limiting enabled
-- ✅ CORS restricted to specific origins
-- ✅ HTTPS enforced (via Railway)
-- ✅ Input validation and sanitization
-- ✅ Security headers added
-- ✅ Environment variables secured
-- ✅ Debug mode disabled in production
-- ✅ Structured logging (no sensitive data)
+---
 
-## Troubleshooting
+## Production Deployment
 
-### Issue: "Tariff file not found"
-**Solution**: Ensure `tariffs.xlsx` is in the same directory as `app.py`
+### Netlify (Frontend)
 
-### Issue: "Supabase connection failed"
-**Solution**: 
-1. Verify `SUPABASE_URL` and `SUPABASE_KEY` are correct
-2. Check that `Calculations` table exists
-3. Verify Supabase project is not paused
+The frontend is configured for Netlify via `netlify.toml` and `next.config.js`.
+Netlify's Essential Next.js plugin handles SSR/ISR.
 
-### Issue: "Rate limit exceeded"
-**Solution**: This is expected behavior. Wait for the rate limit window to reset or contact admin to increase limits.
+1. Push to GitHub
+2. Connect the repo in Netlify dashboard
+3. Set `NEXT_PUBLIC_API_URL` to your backend URL in Netlify environment variables
+4. Deploy
 
-### Issue: "Low confidence match"
-**Solution**: User needs to provide more specific product description. This is working as intended.
+### Railway (Backend)
+
+The `Procfile` and `nixpacks.toml` are configured for Railway.
+Connect your repo and set the environment variables listed above.
+
+### Docker (Backend)
+
+```bash
+docker build -t tariff-api .
+docker run -p 5000:5000 --env-file .env tariff-api
+```
+
+### Gunicorn (standalone)
+
+```bash
+cd backend
+gunicorn -w 4 -b 0.0.0.0:$PORT app:app --timeout 120 --log-level info
+```
+
+---
 
 ## Updating Tariff Data
 
-1. Update `tariffs.xlsx` file
-2. Validate data format (Description and Tariff columns)
-3. Redeploy the application
-4. The new data will be loaded on startup
+1. Replace `tariffs.xlsx` in the project root
+2. Ensure columns `Description` and `Tariff` exist with rates between 0–1
+3. Redeploy — the new data loads on startup
 
-**Future improvement**: Move tariff data to Supabase for hot-reloading without redeployment.
+---
 
-## Performance Optimization
+## Troubleshooting
 
-Current implementation handles ~100 requests/hour per instance. For higher load:
+**"Module not found" on start** — make sure you're running from the `backend/`
+directory, or set `PYTHONPATH` to the project root.
 
-1. **Horizontal Scaling**: Add more Railway instances
-2. **Caching**: Implement Redis for common queries
-3. **Database**: Move tariffs to Supabase for better scalability
-4. **CDN**: Use CDN for static assets if frontend served from same domain
+**Supabase connection failed** — the app starts in degraded mode. Verify your
+`SUPABASE_URL` and `SUPABASE_KEY`, and check that the `Calculations` table exists.
 
-## Rollback Procedure
+**Frontend can't reach API** — set `NEXT_PUBLIC_API_URL` to the correct backend URL
+in `TariffUI/.env.local` (local) or Netlify dashboard (production). Ensure your
+backend's `ALLOWED_ORIGINS` includes the frontend domain.
 
-If deployment fails:
-
-1. **Railway Dashboard**: Click "Rollback" to previous deployment
-2. **CLI**: `railway rollback`
-3. **GitHub**: Revert the commit and push
-
-## Support
-
-For issues or questions:
-- Email: BonaparteXiongBo@gmail.com
-- GitHub Issues: https://github.com/bonapartexiong/TariffCalculations/issues
+**Rate limit exceeded** — wait for the rate window to reset. The limits are per-IP.

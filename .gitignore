@@ -1,8 +1,25 @@
-# Just to be extra safe, explicitly ignore frontend
-frontend/
-frontend/node_modules/
+# Python bytecode
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
 
-# Ignore frontend
-frontend/
-/frontend
-frontend/*
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Environment / secrets
+.env
+.env.*
+
+# OS artifacts
+.DS_Store
+Thumbs.db
+
+# Frontend build output
+TariffUI/.next/
+TariffUI/node_modules/
+TariffUI/out/
