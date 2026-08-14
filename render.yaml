@@ -1,0 +1,28 @@
+# Render Blueprint: deploy the Flask backend as a free web service.
+# This is a reliable alternative if Netlify Functions (Python) is not bundling.
+# Frontend stays on Netlify; set NEXT_PUBLIC_API_URL on Netlify to the Render URL.
+
+services:
+  - type: web
+    name: tariff-api
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --timeout 120 --log-level info
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.10"
+      - key: LOGGING_BACKEND
+        value: stdout
+      - key: ALLOWED_ORIGINS
+        value: "https://YOUR-SITE.netlify.app"
+      # Enable DeepSeek LLM semantic matching (set the value in the Render dashboard):
+      - key: LLM_PROVIDER
+        value: deepseek
+      - key: LLM_API_URL
+        value: "https://api.deepseek.com/v1"
+      - key: LLM_MODEL
+        value: deepseek-v4-pro
+      - key: LLM_API_KEY
+        sync: false
