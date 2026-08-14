@@ -219,11 +219,12 @@ class SemanticMatcher:
             return hts_match
 
         # 2) LLM semantic ranking (chat model such as DeepSeek).
+        #    Best-effort: any non-committal reply or failure degrades gracefully.
         if self.llm_client is not None:
             try:
                 return self._llm_match(description)
-            except ProductMatchError:
-                raise
+            except ProductMatchError as exc:
+                logger.warning("LLM returned no confident match (%s); falling back", exc)
             except Exception as exc:
                 logger.warning(
                     "LLM ranking failed (%s); falling back to lexical TF-IDF",
@@ -239,19 +240,17 @@ class SemanticMatcher:
                     confidence = max(0.0, min(1.0, score))
                     if confidence >= SEMANTIC_THRESHOLD:
                         return self._make_match(index, confidence, "llm_embeddings")
-                    raise ProductMatchError(
-                        f"Low confidence semantic match (confidence: {confidence:.2f}). "
-                        "Please provide a more specific product description.",
+                    logger.warning(
+                        "Embedding match below threshold (%.2f); falling back",
+                        confidence,
                     )
-            except ProductMatchError:
-                raise
             except Exception as exc:  # network/format failure -> degrade gracefully
                 logger.warning(
                     "Semantic matching failed (%s); falling back to lexical TF-IDF",
                     exc,
                 )
 
-        # 3) Lexical TF-IDF fallback (works with no API key / no network).
+        # 4) Lexical TF-IDF fallback (works with no API key / no network).
         return self._lexical_match(description)
 
     def build_index(self, batch_size: int = 500) -> None:

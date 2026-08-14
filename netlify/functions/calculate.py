@@ -81,4 +81,7 @@ def handler(event, context):
 
     except Exception as exc:
         logger.exception("Request %s: Unexpected error - %s", request_id, exc)
-        return _response(500, {"error": "Internal server error"})
+        return _response(
+            500,
+            {"error": "Internal server error", "detail": str(exc)},
+        )

@@ -24,9 +24,12 @@ from backend.exceptions import ValidationError
 
 
 class FakeLLMClient:
-    """Fake chat-LLM client that always picks the first candidate."""
+    """Fake chat-LLM client with a configurable reply."""
 
-    model = "fake-llm"
+    def __init__(self, index=0, confidence=0.9):
+        self.model = "fake-llm"
+        self._index = index
+        self._confidence = confidence
 
     @property
     def name(self):
@@ -34,7 +37,7 @@ class FakeLLMClient:
 
     def complete_json(self, system, user):
         assert "Candidates:" in user
-        return {"index": 0, "confidence": 0.9, "reason": "fake"}
+        return {"index": self._index, "confidence": self._confidence, "reason": "fake"}
 
 
 class FakeEmbeddingProvider:
@@ -98,12 +101,21 @@ def test_semantic_matching(records):
 
 
 def test_llm_matching(records):
-    matcher = SemanticMatcher(records, provider=None, llm_client=FakeLLMClient())
+    matcher = SemanticMatcher(records, provider=None, llm_client=FakeLLMClient(index=0, confidence=0.9))
     match = matcher.find_match("leather handbag")
     assert match.match_source == "llm", match.match_source
     assert match.confidence == 0.9
     assert match.hts_number.startswith("4202"), match.hts_number
     print("llm leather handbag ->", match.hts_number, "|", match.description[:60], "|", match.match_source)
+
+
+def test_llm_falls_back_when_non_committal(records):
+    # The LLM says "no match" -> the API must degrade to lexical, not 404.
+    matcher = SemanticMatcher(records, provider=None, llm_client=FakeLLMClient(index=-1, confidence=0.0))
+    match = matcher.find_match("leather handbag")
+    assert match.match_source == "lexical_tfidf", match.match_source
+    assert match.hts_number.startswith("4202"), match.hts_number
+    print("llm fallback ->", match.hts_number, "|", match.match_source)
 
 
 def test_fees():
@@ -141,6 +153,7 @@ def main():
     test_fees()
     test_lexical_matching(records)
     test_llm_matching(records)
+    test_llm_falls_back_when_non_committal(records)
     test_semantic_matching(records)
     print("ALL TESTS PASSED")
 

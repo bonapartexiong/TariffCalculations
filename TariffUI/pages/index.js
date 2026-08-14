@@ -48,13 +48,22 @@ export default function Home() {
         if (err.response.status === 429) {
           setError('Rate limit exceeded. Please wait a moment and try again.');
         } else if (err.response.status === 404) {
-          setError(
-            (data.error || 'No match found') +
-              ' - ' +
-              (data.suggestion || 'Try a more specific description.')
-          );
+          // A JSON 404 from our API means "no confident match". A non-JSON 404
+          // means the /v1/* route/function itself is missing (deploy not live).
+          if (data && typeof data === 'object' && data.error) {
+            setError(
+              data.error +
+                ' - ' +
+                (data.suggestion || 'Try a more specific description.')
+            );
+          } else {
+            setError(
+              'The API endpoint was not found. The backend function may not be ' +
+                'deployed yet - open /v1/health in your browser to check.'
+            );
+          }
         } else {
-          setError(data.error || `Server error (${err.response.status})`);
+          setError(data && data.error ? data.error : `Server error (${err.response.status})`);
         }
       } else if (err.request) {
         setError('Unable to reach the server. Check your connection and try again.');

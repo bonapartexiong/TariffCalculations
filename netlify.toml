@@ -7,9 +7,26 @@
 
 # Serverless backend: the Flask app is also exposed as Netlify Functions so
 # the frontend and backend share one free deployment (no separate server).
+# included_files lists exactly what the functions need (Flask-only files and
+# backend/requirements.txt are intentionally excluded).
 [functions]
   directory = "netlify/functions"
-  included_files = ["backend/**", "backend/*"]
+  included_files = [
+    "backend/__init__.py",
+    "backend/config.py",
+    "backend/exceptions.py",
+    "backend/models.py",
+    "backend/validators.py",
+    "backend/services/__init__.py",
+    "backend/services/embedding.py",
+    "backend/services/llm_client.py",
+    "backend/services/semantic_matcher.py",
+    "backend/services/tariff_data.py",
+    "backend/services/fee_calculator.py",
+    "backend/services/calculation_logger.py",
+    "backend/services/pipeline.py",
+    "backend/data/tariffs.json.gz"
+  ]
 
 # Rewrite the same /v1/* routes the frontend calls to the serverless functions.
 [[redirects]]
