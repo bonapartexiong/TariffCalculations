@@ -11,8 +11,6 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --timeout 120 --log-level info
     envVars:
-      - key: PYTHON_VERSION
-        value: "3.10"
       - key: LOGGING_BACKEND
         value: stdout
       - key: ALLOWED_ORIGINS

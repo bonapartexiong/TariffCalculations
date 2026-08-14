@@ -3,7 +3,16 @@ Tariff Calculation API — application factory.
 """
 
 import os
+import sys
 from typing import Optional
+
+# Make the repository root importable so the `backend.*` imports below work no
+# matter where the app is started from:
+#   - repo root:      gunicorn backend.app:app
+#   - backend/ dir:   gunicorn app:app  (Render rootDir=backend, Docker CMD)
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
 
 from flask import Flask, jsonify
 from flask_cors import CORS

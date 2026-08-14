@@ -1,16 +1,18 @@
-# Lightweight runtime dependencies.
+# Lightweight runtime dependencies (all pure Python - no binary wheels).
 #
 # pandas, scikit-learn and openpyxl were removed: the tariff dataset is
-# pre-built to JSON (scripts/build_tariff_data.py) and matching uses LLM
-# embeddings with a pure-Python TF-IDF fallback. This keeps the image small
-# and cold starts fast so the API fits on free hosting tiers.
+# pre-built to JSON (scripts/build_tariff_data.py) and matching uses a chat LLM
+# with a pure-Python TF-IDF fallback. NumPy is optional (see below).
 
 Flask==3.0.0
 flask-cors==4.0.0
 Flask-Limiter==3.5.0
-numpy==1.26.4
 python-dotenv==1.0.0
 gunicorn==21.2.0
+
+# Optional: uncomment for faster embedding-based matching. The code also runs
+# without NumPy (pure-Python cosine). Pin a version matching your Python runtime.
+# numpy==1.26.4
 
 # Optional: install only if you enable Supabase logging (LOGGING_BACKEND=supabase).
 # supabase==2.3.0
