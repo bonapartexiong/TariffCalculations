@@ -14,6 +14,8 @@ env/
 # Environment / secrets
 .env
 .env.*
+!.env.example
+!TariffUI/.env.example
 
 # OS artifacts
 .DS_Store
@@ -23,3 +25,17 @@ Thumbs.db
 TariffUI/.next/
 TariffUI/node_modules/
 TariffUI/out/
+
+# Generated runtime data (regenerate with scripts/build_tariff_data.py)
+backend/data/tariffs.json
+
+# Generated LLM embedding caches (regenerate with scripts/build_embeddings.py)
+backend/data/embeddings.npz
+backend/data/embeddings.json
+backend/data/embeddings_meta.json
+
+# Local calculation logging
+calculations.jsonl
+
+# Test scratch
+.test_tmp/

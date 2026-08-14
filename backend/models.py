@@ -12,6 +12,9 @@ class ProductMatch:
     tariff_rate: float
     confidence: float
     index: int
+    group: str = ""
+    hts_number: str = ""
+    match_source: str = "lexical_tfidf"
 
 
 @dataclass

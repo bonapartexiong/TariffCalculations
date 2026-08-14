@@ -1,0 +1,8 @@
+# Dependencies for the Netlify Functions (serverless backend) in netlify/functions/.
+# Netlify installs the repository-root requirements.txt into each Python function.
+#
+# The free lexical-fallback matching path uses ONLY the Python standard library,
+# so no packages are required here. If you later enable LLM embeddings and want
+# faster 31k-row cosine scoring, uncomment NumPy (pick a version matching the
+# Netlify Python runtime, e.g. 1.26.4 for Python 3.9+ or 1.24.4 for 3.8):
+# numpy==1.26.4

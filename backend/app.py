@@ -3,7 +3,6 @@ Tariff Calculation API — application factory.
 """
 
 import os
-import sys
 from typing import Optional
 
 from flask import Flask, jsonify
@@ -12,7 +11,6 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from werkzeug.middleware.proxy_fix import ProxyFix
 from dotenv import load_dotenv
-from supabase import create_client, Client
 
 from backend.config import (
     API_VERSION,
@@ -32,19 +30,29 @@ from backend.routes.calculate import calculate_duty
 load_dotenv()
 
 
-def _init_supabase() -> Optional[Client]:
-    """Attempt to initialize Supabase. Returns None on failure (never crashes)."""
+def _init_supabase():
+    """Attempt to initialize Supabase. Returns None on failure (never crashes).
+
+    Supabase is optional; the supabase package is imported lazily so the
+    default (free) deployment has no database dependency at all.
+    """
     url = os.getenv("SUPABASE_URL")
     key = os.getenv("SUPABASE_KEY")
 
     if not url or not key:
-        logger.warning(
-            "SUPABASE_URL and/or SUPABASE_KEY not set — logging disabled"
-        )
         return None
 
     if not url.startswith("https://"):
         logger.error("SUPABASE_URL must be an HTTPS URL")
+        return None
+
+    try:
+        from supabase import create_client
+    except ImportError:
+        logger.warning(
+            "SUPABASE_URL/KEY set but the 'supabase' package is not installed; "
+            "install it to enable Supabase logging",
+        )
         return None
 
     try:
@@ -54,8 +62,13 @@ def _init_supabase() -> Optional[Client]:
         return client
     except Exception as exc:
         logger.error("Supabase initialization failed: %s", exc)
-        logger.warning("Continuing without database — logging will be skipped")
+        logger.warning("Continuing without Supabase — logging will use another backend")
         return None
+
+
+def _init_calculation_logger(supabase_client) -> CalculationLogger:
+    """Build the calculation logger from environment configuration."""
+    return CalculationLogger(supabase_client=supabase_client)
 
 
 def create_app() -> Flask:
@@ -74,7 +87,7 @@ def create_app() -> Flask:
     ).split(",")
     CORS(app, origins=allowed_origins)
 
-    # --- Rate limiter (note: in-memory storage; use Redis for multi-worker deploys) ---
+    # --- Rate limiter (in-memory storage; use Redis for multi-worker deploys) ---
     limiter = Limiter(
         app=app,
         key_func=get_remote_address,
@@ -99,9 +112,7 @@ def create_app() -> Flask:
         )
 
     fee_calculator = FeeCalculator()
-    calculation_logger = (
-        CalculationLogger(supabase_client) if supabase_client else None
-    )
+    calculation_logger = _init_calculation_logger(supabase_client)
 
     # --- Middleware ---
     app.before_request(before_request)
@@ -111,7 +122,7 @@ def create_app() -> Flask:
     app.add_url_rule(
         f"/{API_VERSION}/health",
         "health_check",
-        health_check(tariff_service, supabase_client),
+        health_check(tariff_service, calculation_logger),
         methods=["GET"],
     )
 

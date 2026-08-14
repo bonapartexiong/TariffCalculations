@@ -21,6 +21,17 @@ Thumbs.db
 # Docs / config (not needed at runtime)
 README.md
 nixpacks.toml
+netlify.toml
+Procfile
 
-# Frontend (excluded from backend Docker image)
+# Frontend and tooling (excluded from the backend Docker image)
 TariffUI/
+netlify/
+scripts/
+tests/
+
+# Uncompressed dataset (the .gz copy is committed and used at runtime)
+backend/data/tariffs.json
+backend/data/embeddings.npz
+backend/data/embeddings.json
+backend/data/embeddings_meta.json

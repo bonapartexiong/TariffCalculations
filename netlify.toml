@@ -1,9 +1,23 @@
 [build]
   command = "cd TariffUI && npm install && npm run build"
-  publish = "TariffUI/.next"
+  publish = "TariffUI/out"
 
 [build.environment]
   NODE_VERSION = "18"
 
-[[plugins]]
-  package = "@netlify/plugin-nextjs"
+# Serverless backend: the Flask app is also exposed as Netlify Functions so
+# the frontend and backend share one free deployment (no separate server).
+[functions]
+  directory = "netlify/functions"
+  included_files = ["backend/**", "backend/*"]
+
+# Rewrite the same /v1/* routes the frontend calls to the serverless functions.
+[[redirects]]
+  from = "/v1/calculate"
+  to = "/.netlify/functions/calculate"
+  status = 200
+
+[[redirects]]
+  from = "/v1/health"
+  to = "/.netlify/functions/health"
+  status = 200

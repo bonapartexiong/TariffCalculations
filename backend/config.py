@@ -20,7 +20,9 @@ MAX_DESCRIPTION_LENGTH = 500
 MIN_DESCRIPTION_LENGTH = 3
 
 # Matching
-SIMILARITY_THRESHOLD = 0.3  # Minimum confidence for product match
+SIMILARITY_THRESHOLD = 0.3  # Minimum cosine confidence for lexical fallback
+SEMANTIC_THRESHOLD = 0.35  # Minimum cosine similarity for embedding-based match
+LLM_THRESHOLD = 0.5  # Minimum self-reported confidence for chat-LLM ranking
 
 # Rate limiting
 RATE_LIMIT_HOURLY = "100 per hour"

@@ -1,119 +1,92 @@
 """
-Tariff data loading and product matching via TF-IDF + cosine similarity.
+Tariff data loading and product matching.
+
+Loads the compact, pre-built JSON dataset (see scripts/build_tariff_data.py)
+and delegates matching to SemanticMatcher, which uses a chat LLM (e.g.
+DeepSeek) or embeddings for semantic understanding, with a lexical TF-IDF
+fallback.
 """
+from __future__ import annotations
 
+import gzip
+import json
 import os
-from typing import Optional
+from typing import Optional, Sequence
 
-import pandas as pd
-from sklearn.metrics.pairwise import cosine_similarity
-from sklearn.feature_extraction.text import TfidfVectorizer
-
-from backend.config import SIMILARITY_THRESHOLD, logger
-from backend.exceptions import ProductMatchError
+from backend.config import logger
 from backend.models import ProductMatch
+from backend.services.embedding import EmbeddingProvider, get_embedding_provider
+from backend.services.llm_client import LLMClient, get_llm_client
+from backend.services.semantic_matcher import SemanticMatcher
+
+
+def _default_data_dir() -> str:
+    """Return the backend/data directory (one level above this file)."""
+    services_dir = os.path.dirname(os.path.abspath(__file__))
+    backend_dir = os.path.dirname(services_dir)
+    return os.path.join(backend_dir, "data")
 
 
 class TariffDataService:
-    """Handles tariff data loading and product matching."""
+    """Loads tariff records and exposes semantic product matching."""
 
-    def __init__(self):
-        self.df: Optional[pd.DataFrame] = None
-        self.vectorizer: Optional[TfidfVectorizer] = None
-        self.tfidf_matrix = None
+    def __init__(self, data_dir: Optional[str] = None):
+        self.data_dir = data_dir or _default_data_dir()
+        self.records: Sequence[dict] = []
+        self.matcher: Optional[SemanticMatcher] = None
+        self.provider: Optional[EmbeddingProvider] = None
+        self.llm_client: Optional[LLMClient] = None
 
     def load_data(self) -> None:
-        """Load and validate tariff data from Excel file.
+        """Load and validate the tariff dataset from the JSON cache."""
+        gz_path = os.path.join(self.data_dir, "tariffs.json.gz")
+        json_path = os.path.join(self.data_dir, "tariffs.json")
 
-        Looks for tariffs.xlsx in the project root (one level above backend/).
-        """
-        try:
-            # __file__ is backend/services/tariff_data.py
-            # dirname 1 → backend/services/
-            # dirname 2 → backend/
-            # dirname 3 → project root (where tariffs.xlsx lives)
-            services_dir = os.path.dirname(os.path.abspath(__file__))
-            backend_dir = os.path.dirname(services_dir)
-            project_root = os.path.dirname(backend_dir)
-            excel_path = os.path.join(project_root, "tariffs.xlsx")
-
-            if not os.path.exists(excel_path):
-                raise FileNotFoundError(f"Tariff file not found at {excel_path}")
-
-            self.df = pd.read_excel(excel_path)
-
-            required_columns = ["Description", "Tariff"]
-            missing = [c for c in required_columns if c not in self.df.columns]
-            if missing:
-                raise ValueError(f"Missing required columns: {missing}")
-
-            if self.df.empty:
-                raise ValueError("Tariff data is empty")
-
-            if self.df["Description"].isna().any():
-                logger.warning("Found null descriptions — dropping them")
-                self.df = self.df.dropna(subset=["Description"])
-
-            if self.df["Tariff"].isna().any():
-                raise ValueError("Found null tariff rates")
-
-            if (self.df["Tariff"] < 0).any():
-                raise ValueError("Tariff rates must be non-negative")
-
-            # Auto-normalize rates stored as percentages (e.g. 10 → 0.10)
-            if (self.df["Tariff"] > 1).any():
-                over_1 = (self.df["Tariff"] > 1).sum()
-                logger.warning(
-                    "Found %d tariff rates > 1 — dividing by 100 to normalize",
-                    over_1,
-                )
-                self.df["Tariff"] = self.df["Tariff"].apply(
-                    lambda r: r / 100 if r > 1 else r
-                )
-
-            self.vectorizer = TfidfVectorizer(
-                stop_words="english",
-                max_features=5000,
-                ngram_range=(1, 2),
-            )
-            self.tfidf_matrix = self.vectorizer.fit_transform(
-                self.df["Description"]
+        if os.path.exists(gz_path):
+            with gzip.open(gz_path, "rt", encoding="utf-8") as fh:
+                payload = json.load(fh)
+        elif os.path.exists(json_path):
+            with open(json_path, "r", encoding="utf-8") as fh:
+                payload = json.load(fh)
+        else:
+            raise FileNotFoundError(
+                f"Tariff dataset not found. Expected {gz_path} or {json_path}. "
+                "Run scripts/build_tariff_data.py to generate it.",
             )
 
-            logger.info("Successfully loaded %d tariff records", len(self.df))
+        records = payload.get("records")
+        if not records:
+            raise ValueError("Tariff dataset contains no records")
 
-        except Exception:
-            logger.exception("Failed to load tariff data")
-            raise
+        self.records = records
+        self.provider = get_embedding_provider()
+        self.llm_client = get_llm_client()
+        llm_candidates = int(os.getenv("LLM_CANDIDATES", "10"))
+        self.matcher = SemanticMatcher(
+            records=self.records,
+            provider=self.provider,
+            cache_dir=self.data_dir,
+            llm_client=self.llm_client,
+            llm_candidates=llm_candidates,
+        )
+
+        if os.getenv("EMBEDDING_LAZY_BUILD", "").lower() in ("true", "1", "yes"):
+            if self.provider is None:
+                logger.warning("EMBEDDING_LAZY_BUILD set but no provider configured")
+            else:
+                logger.info("Building embedding index at startup (EMBEDDING_LAZY_BUILD)")
+                self.matcher.build_index()
+
+        logger.info(
+            "Successfully loaded %d tariff records (matcher=%s)",
+            len(self.records),
+            self.llm_client.name
+            if self.llm_client
+            else (self.provider.name if self.provider else "lexical-tfidf"),
+        )
 
     def find_match(self, description: str) -> ProductMatch:
-        """Find the best matching product from the tariff database."""
-        if self.vectorizer is None or self.tfidf_matrix is None:
+        """Find the best matching tariff record for a description."""
+        if self.matcher is None:
             raise ValueError("Tariff data not loaded")
-
-        try:
-            input_vector = self.vectorizer.transform([description])
-            similarities = cosine_similarity(input_vector, self.tfidf_matrix)
-            best_idx = similarities.argmax()
-            confidence = float(similarities[0, best_idx])
-
-            if confidence < SIMILARITY_THRESHOLD:
-                raise ProductMatchError(
-                    f"Low confidence match (confidence: {confidence:.2f}). "
-                    "Please provide a more specific product description."
-                )
-
-            matched_row = self.df.iloc[best_idx]
-
-            return ProductMatch(
-                description=matched_row["Description"],
-                tariff_rate=float(matched_row["Tariff"]),
-                confidence=confidence,
-                index=best_idx,
-            )
-
-        except ProductMatchError:
-            raise
-        except Exception as exc:
-            logger.error("Error finding product match: %s", exc)
-            raise ProductMatchError(f"Unable to match product: {exc}")
+        return self.matcher.find_match(description)
