@@ -1,87 +1,72 @@
-"""
-Netlify Functions adapter for POST /v1/calculate.
+"""Netlify Function adapter for POST /v1/calculate.
 
-Runs the exact same calculation pipeline as the Flask app, but as a serverless
-function, so the frontend and backend can share a single free Netlify
-deployment (no separate Railway/Docker bill). See netlify.toml for the
-"/v1/*" -> function rewrites.
+Thin adapter: ALL logic lives in ``backend.services.pipeline``. This file
+only translates the Netlify event shape <-> the pipeline and renders a
+generic 500 on unexpected errors (no exception detail ever leaks).
 """
+
 import json
-import os
+import logging
 import sys
 import uuid
+from pathlib import Path
 
-# Make the bundled "backend" package importable regardless of where Netlify
-# places the function file inside the deployment bundle.
-_HERE = os.path.dirname(os.path.abspath(__file__))
-for _p in (_HERE, os.path.dirname(_HERE), os.path.dirname(os.path.dirname(_HERE))):
-    if _p and _p not in sys.path:
-        sys.path.insert(0, _p)
-
-from backend.config import logger
-from backend.exceptions import ValidationError, ProductMatchError, TariffCalculationError
-from backend.services.tariff_data import TariffDataService
-from backend.services.fee_calculator import FeeCalculator
-from backend.services.calculation_logger import CalculationLogger
-from backend.services.pipeline import calculate_duty_pipeline
-
-# Lazy module-level init; reused across warm invocations.
-_SERVICES = None
+log = logging.getLogger(__name__)
 
 
-def _get_services():
-    global _SERVICES
-    if _SERVICES is None:
-        tariff_service = TariffDataService()
-        tariff_service.load_data()
-        _SERVICES = (tariff_service, FeeCalculator(), CalculationLogger())
-    return _SERVICES
+def _ensure_project_on_path():
+    here = Path(__file__).resolve()
+    for candidate in [here.parent, *here.parents]:
+        if (candidate / "backend" / "services" / "pipeline.py").exists():
+            if str(candidate) not in sys.path:
+                sys.path.insert(0, str(candidate))
+            return
+    # Fallback: assume repo root is three levels up (netlify/functions/).
+    root = here.parents[2]
+    if str(root) not in sys.path:
+        sys.path.insert(0, str(root))
+
+
+_ensure_project_on_path()
+
+from backend.exceptions import ApiError  # noqa: E402
+from backend.services import pipeline  # noqa: E402
 
 
 def _response(status_code, payload):
     return {
         "statusCode": status_code,
-        "headers": {"Content-Type": "application/json"},
+        "headers": {
+            "Content-Type": "application/json",
+            "X-Request-ID": uuid.uuid4().hex,
+        },
         "body": json.dumps(payload),
     }
 
 
-def handler(event, context):
-    """Netlify function entry point (Lambda-style signature)."""
-    request_id = str(uuid.uuid4())
+def _generic_500():
+    return _response(500, {"error": {"code": "internal_error", "message": "Internal error."}})
+
+
+def handler(event, context=None):
     try:
-        tariff_service, fee_calculator, calculation_logger = _get_services()
-        body = json.loads(event.get("body") or "{}")
-        payload = calculate_duty_pipeline(
-            data=body,
-            tariff_service=tariff_service,
-            fee_calculator=fee_calculator,
-            calculation_logger=calculation_logger,
-            request_id=request_id,
-        )
-        return _response(200, payload)
-
-    except ValidationError as exc:
-        return _response(400, {"error": str(exc)})
-
-    except ProductMatchError as exc:
-        return _response(
-            404,
-            {
-                "error": str(exc),
-                "suggestion": (
-                    "Try using more specific product details (material, use, category)"
-                ),
-            },
-        )
-
-    except TariffCalculationError as exc:
-        logger.error("Request %s: Calculation error - %s", request_id, exc)
-        return _response(500, {"error": "Unable to calculate tariff"})
-
-    except Exception as exc:
-        logger.exception("Request %s: Unexpected error - %s", request_id, exc)
-        return _response(
-            500,
-            {"error": "Internal server error", "detail": str(exc)},
-        )
+        method = (event or {}).get("httpMethod", "POST")
+        if method != "POST":
+            return _response(405, {"error": {"code": "method_not_allowed",
+                                             "message": "Method not allowed."}})
+        raw_body = (event or {}).get("body") or "{}"
+        try:
+            payload = json.loads(raw_body)
+        except (TypeError, ValueError):
+            return _response(400, {"error": {"code": "validation_error",
+                                             "message": "Request validation failed."}})
+        if not isinstance(payload, dict):
+            return _response(400, {"error": {"code": "validation_error",
+                                             "message": "Request validation failed."}})
+        result = pipeline.run_calculate(payload)
+        return _response(200, result)
+    except ApiError as exc:
+        return _response(exc.status_code, exc.to_dict())
+    except Exception:
+        log.exception("Netlify calculate adapter failed")
+        return _generic_500()

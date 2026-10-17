@@ -1,0 +1,21 @@
+{
+  "revision": "2026 Rev 21",
+  "publication": "Pub. 5802",
+  "source_pdf": "2026HTSRev21_0_cgh9.pdf",
+  "source_pdf_sha256": "6eb8af206472da27052ee85e2b75add42731f17fb04c3ce7c96c3e478f7f54d4",
+  "build_date": "2026-10-17T22:57:25.665851Z",
+  "chunk_count": 58,
+  "pages": 4534,
+  "sample": true,
+  "pages_subset": [
+    16,
+    18,
+    19,
+    20,
+    2125,
+    2875,
+    3311,
+    3989,
+    4290
+  ]
+}

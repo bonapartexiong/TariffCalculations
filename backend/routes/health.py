@@ -1,69 +1,19 @@
-"""
-Health-check route.
-"""
-from datetime import datetime, timezone
+"""GET /v1/health: status, revision, chunks, source_pdf_sha256,
+build_date, engine, index_path / index_exists."""
 
-from flask import jsonify
+from __future__ import annotations
 
-from backend.config import API_VERSION, logger
+try:
+    from flask import Blueprint, jsonify
+except Exception:  # pragma: no cover - Flask not installed.
+    Blueprint = None  # type: ignore
 
+from backend.services import pipeline
 
-def health_check(tariff_service, calculation_logger):
-    """Comprehensive health check endpoint (closure-style registration)."""
+health_bp = Blueprint("health", __name__) if Blueprint else None
 
-    def _handler():
-        try:
-            records_loaded = bool(getattr(tariff_service, "records", None))
-            matcher = getattr(tariff_service, "matcher", None)
-            provider = getattr(tariff_service, "provider", None)
-            llm_client = getattr(tariff_service, "llm_client", None)
+if health_bp is not None:
 
-            checks = {
-                "tariff_data": records_loaded,
-                "matcher": matcher is not None,
-            }
-
-            if llm_client is not None:
-                engine, engine_provider, engine_model = (
-                    "llm",
-                    llm_client.name,
-                    llm_client.model,
-                )
-            elif provider is not None:
-                engine, engine_provider, engine_model = (
-                    "llm_embeddings",
-                    provider.name,
-                    getattr(matcher, "embedding_model", None) or provider.model,
-                )
-            else:
-                engine, engine_provider, engine_model = "lexical_tfidf", "none", None
-
-            matching = {
-                "engine": engine,
-                "provider": engine_provider,
-                "model": engine_model,
-                "records": len(getattr(tariff_service, "records", [])),
-            }
-
-            logging_backend = (
-                calculation_logger.backend
-                if calculation_logger is not None
-                else "none"
-            )
-
-            health = {
-                "status": "healthy" if all(checks.values()) else "degraded",
-                "version": API_VERSION,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "checks": checks,
-                "matching": matching,
-                "logging": logging_backend,
-            }
-
-            return jsonify(health), 200 if all(checks.values()) else 503
-
-        except Exception as exc:
-            logger.exception("Health check error: %s", exc)
-            return jsonify({"status": "unhealthy", "error": str(exc)}), 503
-
-    return _handler
+    @health_bp.route("/v1/health", methods=["GET"])
+    def health():
+        return jsonify(pipeline.health_info()), 200

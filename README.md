@@ -1,314 +1,191 @@
-# Tariff Calculation API
+# TariffCalculations-RAG
 
-Customs duty calculator that matches a user's product description against the full
-US Harmonized Tariff Schedule (~31,000 lines) and estimates import duties and fees.
+Grounded tariff estimation from the Harmonized Tariff Schedule of the
+United States, **2026 Rev 21 (Pub. 5802)**. The HTS PDF is the sole
+ground truth. Every rate in every answer is cited as
+`(HTS, p.N, Rev 21)`; anything not found in the PDF is abstained from,
+never invented.
 
-Product matching now uses **LLM semantic understanding** (a chat LLM such as DeepSeek
-that ranks candidates, or text embeddings) instead of the old TF-IDF + cosine-similarity
-approach, with a dependency-free lexical fallback so the API still runs for free when
-no LLM key is configured. The stack is also much cheaper to host: the frontend is a
-static export and the backend runs as lightweight serverless functions (or a tiny
-container).
-
----
-
-## Highlights
-
-- **LLM semantic matching** - a chat LLM (DeepSeek and other OpenAI-compatible
-  models) reads the top lexical candidates and picks the best match by meaning; an
-  embeddings path is also available. This captures meaning ("sneakers" ~ "athletic
-  footwear"), not just shared words.
-- **Free-mode fallback** - a pure-Python TF-IDF matcher (stopword removal + light
-  stemming) keeps the API fully functional with no API key, no network, and no NumPy.
-- **Cheap/free to host** - the frontend is a static export; the backend can run as
-  Netlify Functions (free tier) with the frontend on the same domain, or as a slim
-  Flask app on any free-tier host.
-- **Small footprint** - pandas, scikit-learn, and openpyxl were removed. The tariff
-  data is pre-built to a ~0.75 MB gzipped JSON, so cold starts are fast.
-- **Optional persistence** - calculation logging defaults to stdout; file and Supabase
-  backends are opt-in.
-
----
+> Estimate only — not a binding classification. Verify with CBP/broker.
+> Sources: HTS 2026 Rev 21 + CBP fee config (external).
 
 ## Architecture
 
 ```
-Browser (React/Next.js, static export)
+HTS 2026 Rev 21 PDF (Pub. 5802, sole ground truth)
         |
-        |  POST /v1/calculate   (same-origin)
         v
-Netlify redirect / .netlify/functions/calculate   <-- or Flask on any host
+rag/ingest/parse_hts_pdf()          (Module A — PDF -> chunks)
         |
-        |  validate -> LLM semantic match -> fee calculator
         v
-backend/services/
-    llm_client.py       OpenAI-compatible /chat/completions client (stdlib HTTP)
-    embedding.py        OpenAI-compatible /v1/embeddings client (stdlib HTTP)
-    semantic_matcher.py LLM ranking + embedding search + TF-IDF fallback
-    pipeline.py         shared validate -> match -> calculate pipeline
-    fee_calculator.py   duty / MPF / HMF (Decimal arithmetic)
-    calculation_logger.py  stdout | file | supabase | none
+scripts/build_index.py  -->  data/index.jsonl + data/meta.json
+        |
+        v
+backend/services/pipeline.py  <-- SINGLE SOURCE OF TRUTH
+   |  imports defensively: rag.retrieval / rag.calculator / rag.answer
+   |  degrades gracefully when the index or a module is missing
+   +--> backend/ (Flask): routes/calculate.py, routes/rag.py, routes/health.py
+   +--> netlify/functions/ (thin adapters: calculate.py, health.py)
+        |
+        v
+POST /v1/calculate  |  POST /v1/rag/query  |  GET /v1/health
 ```
 
----
+Module map (see `CONTRACTS.md` for the authoritative contracts):
 
-## Quick Start
+| Area | Owner | Notes |
+| --- | --- | --- |
+| `rag/ingest`, `rag/rates`, `rag/retrieval`, `rag/calculator`, `rag/answer` | Other builders | Module C imports them defensively (`try/except`), never writes them |
+| `backend/`, `netlify/functions/`, `scripts/`, `tests/`, docs | **Module C (this work)** | This repo's backend + scripts + docs + demo |
 
-### 1. Build the dataset (first time only)
+Key design decisions:
 
-The repository already ships `backend/data/tariffs.json.gz`. To regenerate it after
-changing `tariffs.xlsx`:
+- **One pipeline.** Flask routes and Netlify functions both call
+  `backend.services.pipeline`. There is no duplicated calculation,
+  retrieval, or answering logic.
+- **Defensive imports.** If a sibling module or the index is missing,
+  the API returns `computable: false` / abstention + warnings — never a
+  crash, never an invented rate.
+- **No exception detail leaks.** Error bodies carry only a stable
+  `code` + generic `message`. No tracebacks, file paths, or payloads.
+- **No personal email** in any response. No secrets in the repo.
+
+## Grounding guarantees
+
+1. Rates come only from PDF chunks (JSONL index) via `rag/retrieval`
+   + `rag/calculator`. No rate is ever produced by an LLM from memory.
+2. Every response carries `citations` (`(HTS, p.N, Rev 21)`),
+   `provenance` (revision, publication, PDF SHA-256, index path), and
+   the generic disclaimer.
+3. `rag/answer` abstains when retrieval finds nothing, and flags
+   GSP-lapsed, GN12-deleted, MPF/HMF-external, and Chapter 99 expiry.
+   See `GROUNDING.md` for the full list of PDF facts and traps.
+4. MPF/HMF are **external CBP fee config**, not HTS PDF data, and are
+   labelled as such everywhere. Defaults: MPF 0.3464%, min $32.71,
+   cap $575 (CBP FY2025); HMF 0.125%, ocean-only. Override via env
+   (`MPF_RATE`, `MPF_MIN`, `MPF_CAP`, `HMF_RATE`) — never via the PDF.
+5. Rounding: each component rounded HALF_UP to cents; subtotal = sum
+   of rounded components. Percentages are stored as Decimal strings,
+   never floats (see `AUDIT.md`: the old 100x bug).
+
+## What is NOT in the PDF (do not claim otherwise)
+
+- MPF/HMF rates and rules (external CBP fee config).
+- Quota fill levels / in-quota availability (TRQ administration is
+  external; the PDF gives the in/out rates and notes).
+- Binding classification decisions, broker advice, or effective dates
+  for every line (the preface date 2026-10-09 is **not** an effective
+  date for all lines).
+- GSP benefits as currently claimable — GSP is **lapsed**; `Free (A)`
+  must be flagged, not presented as claimable. See `GROUNDING.md`.
+- Any spreadsheet source: the legacy spreadsheet is **disregarded**.
+  The PDF is the only ground truth.
+
+## Build the index from the PDF
 
 ```bash
-python scripts/build_tariff_data.py
+pip install -r requirements.txt        # PyMuPDF + pytest
+python scripts/build_index.py \
+  --pdf ~/workspace/user/files/2026HTSRev21_0_cgh9.pdf \
+  --out data/index.jsonl --validate
+# Sample (first pages only, smoke test):
+python scripts/build_index.py --sample
+# Page subset:
+python scripts/build_index.py --pages 1-10 --validate
 ```
 
-### 2. (Optional) Enable LLM semantic matching
+Output: `data/index.jsonl` (one chunk per line, per `CONTRACTS.md`)
++ `data/meta.json`
+`{revision, publication, source_pdf_sha256, build_date, chunk_count, pages}`.
 
-The recommended path is a **chat LLM (DeepSeek)**. It ranks the top lexical candidates
-on the fly, so there is no index to precompute - just set environment variables:
+## Run the API
 
 ```bash
-export LLM_PROVIDER=deepseek
-export LLM_API_URL=https://api.deepseek.com/v1   # or your provider's base URL
-export LLM_API_KEY=sk-...
-export LLM_MODEL=deepseek-v4-pro                  # or deepseek-chat
+pip install -r backend/requirements.txt   # Flask, flask-cors, python-dotenv, gunicorn
+cp .env.example .env                     # then set INDEX_PATH / PDF_PATH / PORT / ALLOWED_ORIGINS
+python -m backend.app                    # dev server on 127.0.0.1:$PORT
+# Production:
+gunicorn 'backend.app:create_app()' --bind 0.0.0.0:$PORT
 ```
 
-Alternatively, the **embeddings** path needs a precomputed index:
+## Run the demo
 
 ```bash
-export EMBEDDING_PROVIDER=openai
-export EMBEDDING_API_KEY=sk-...
-python scripts/build_embeddings.py
+python scripts/demo.py               # uses data/index.jsonl, else sample, else synthetic fallback
+python scripts/demo.py --synthetic   # force the labelled abstain/uncomputable path
 ```
 
-Without any LLM configuration, the API automatically uses the lexical fallback.
+## Endpoints
 
-### 3. Run the Flask backend locally
+### GET /v1/health
 
 ```bash
-python3.10 -m venv venv
-source venv/bin/activate            # Windows: venv\Scripts\activate
-pip install -r backend/requirements.txt
-cp .env.example .env                 # edit as needed
-cd backend && python app.py          # -> http://localhost:5000
-```
-
-### 4. Run the frontend locally
-
-```bash
-cd TariffUI
-npm install
-cp .env.example .env.local           # set NEXT_PUBLIC_API_URL=http://localhost:5000
-npm run dev                          # -> http://localhost:3000
-```
-
-### 5. Run the tests
-
-```bash
-python tests/test_core.py            # core matching + fee pipeline
-python tests/test_netlify_handlers.py # serverless adapter contract
-```
-
----
-
-## How matching works
-
-`SemanticMatcher` resolves a description in up to four steps:
-
-1. **HTS code fast path** - if the input is a code such as `4202.11`, it is matched
-   exactly (or by prefix) against `hts_number`.
-2. **LLM semantic ranking** (primary) - the top `LLM_CANDIDATES` lexical matches are
-   sent to a chat LLM (DeepSeek or any OpenAI-compatible model), which reads them and
-   returns the best index plus a confidence. This is the path used when
-   `LLM_PROVIDER` is set; results are tagged `match_source="llm"`.
-3. **Embedding match** (alternative) - the query is embedded and cosine-scored against
-   precomputed corpus embeddings; results are tagged `match_source="llm_embeddings"`.
-4. **Lexical fallback** - if no LLM is configured (or the LLM call fails), a pure-Python
-   TF-IDF + cosine matcher answers with `match_source="lexical_tfidf"`.
-
-The response reports the engine that answered via `match_source`, so callers can tell
-semantic matches apart from fallbacks.
-
-### LLM provider (chat)
-
-DeepSeek exposes an OpenAI-compatible `/chat/completions` endpoint (it has no
-embeddings endpoint), which is why the primary path is ranking rather than embedding.
-Any OpenAI-compatible chat API works the same way:
-
-```bash
-LLM_PROVIDER=deepseek
-LLM_API_URL=https://api.deepseek.com/v1
-LLM_API_KEY=sk-...
-LLM_MODEL=deepseek-v4-pro
-```
-
-### Embedding provider (alternative)
-
-For providers that do offer embeddings, any OpenAI-compatible endpoint works - OpenAI,
-Azure OpenAI, Together, Groq, Mistral, Ollama, or a self-hosted server:
-
-```bash
-EMBEDDING_PROVIDER=openai
-EMBEDDING_API_URL=http://localhost:11434/v1   # e.g. Ollama
-EMBEDDING_MODEL=nomic-embed-text
-```
-
----
-
-## Free / cheap hosting
-
-### Option A - everything on Netlify (free tier, one domain)
-
-The frontend is a static export (`TariffUI/out`) and the backend is exposed as
-Netlify Functions under `netlify/functions/`. `netlify.toml` rewrites `/v1/*` to the
-functions, so the frontend calls the same-origin API with no CORS and no separate
-server.
-
-1. Push the repo to GitHub and connect it in Netlify.
-2. (Optional) enable the DeepSeek LLM by adding these **Netlify environment variables**:
-   `LLM_PROVIDER=deepseek`, `LLM_API_URL`, `LLM_API_KEY`, and `LLM_MODEL=deepseek-v4-pro`.
-   No index file is needed - the LLM ranks lexical candidates on the fly.
-3. Deploy - `netlify.toml` handles the build, the `[functions]` config, and the
-   `/v1/*` rewrites.
-
-### Option B - static frontend + serverless/Flask backend
-
-Because the frontend is a static export, host it free on Netlify, GitHub Pages, or
-Cloudflare Pages. Run the slim Flask backend (or the same Netlify functions) wherever
-you like:
-
-- **Render** - free web service (`gunicorn app:app`, Python 3.10).
-- **Fly.io** - small allowance; `docker build .`.
-- **Railway / any PaaS** - `Procfile` and `nixpacks.toml` are included.
-
-The backend now starts in a couple of seconds and uses a few tens of MB (vs. the old
-pandas/scikit-learn stack), so it fits comfortably on free tiers.
-
----
-
-## Environment variables
-
-### Backend
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `LLM_PROVIDER` | `none` (off) or `deepseek` / OpenAI-compatible chat LLM | `none` |
-| `LLM_API_URL` | Chat endpoint base URL | `https://api.deepseek.com/v1` |
-| `LLM_API_KEY` | API key (falls back to `DEEPSEEK_API_KEY`, then `OPENAI_API_KEY`) | - |
-| `LLM_MODEL` | Chat model id (e.g. `deepseek-v4-pro`, `deepseek-chat`) | `deepseek-chat` |
-| `LLM_CANDIDATES` | Number of lexical candidates the LLM ranks | `10` |
-| `LLM_TIMEOUT` | LLM request timeout (seconds) | `60` |
-| `EMBEDDING_PROVIDER` | `none` (off) or an OpenAI-compatible embedding provider | `none` |
-| `EMBEDDING_API_URL` | Embedding endpoint base URL | `https://api.openai.com/v1` |
-| `EMBEDDING_API_KEY` | API key (falls back to `OPENAI_API_KEY`) | - |
-| `EMBEDDING_MODEL` | Embedding model name | `text-embedding-3-small` |
-| `EMBEDDING_DIMENSIONS` | Optional vector dimension override | - |
-| `EMBEDDING_LAZY_BUILD` | Build the index at startup (`true`/`false`) | `false` |
-| `LOGGING_BACKEND` | `stdout` / `file` / `supabase` / `none` | `stdout` |
-| `LOGGING_FILE_PATH` | JSONL path when `LOGGING_BACKEND=file` | `calculations.jsonl` |
-| `SUPABASE_URL` / `SUPABASE_KEY` | Optional Supabase persistence | - |
-| `ALLOWED_ORIGINS` | Comma-separated CORS origins | `http://localhost:3000` |
-| `PORT` / `FLASK_DEBUG` | Flask listen port / debug mode | `5000` / `false` |
-
-### Frontend (`TariffUI/.env.local`)
-
-| Variable | Description |
-|----------|-------------|
-| `NEXT_PUBLIC_API_URL` | Backend base URL; leave empty for same-origin (Netlify functions) |
-
----
-
-## API
-
-### Health
-
-```http
-GET /v1/health
-```
-
-Returns service status plus the active matching engine and model.
-
-### Calculate
-
-```http
-POST /v1/calculate
-Content-Type: application/json
-
-{"description": "Leather handbag", "value": 500.00}
+curl localhost:5000/v1/health
 ```
 
 ```json
 {
-  "matched_description": "Handbags...; With outer surface of leather...",
-  "matched_group": "...",
-  "hts_number": "4202.21.30.00",
-  "match_source": "llm",
-  "confidence": 0.62,
-  "tariff": 0.053,
-  "duty": 26.5,
-  "merchandise_processing_fee": 1.73,
-  "harbor_maintenance_fee": 0.63,
-  "subtotal": 28.86,
-  "footnote": "...",
-  "request_id": "..."
+  "status": "ok",
+  "revision": "2026 Rev 21",
+  "chunks": 123456,
+  "source_pdf_sha256": "…",
+  "build_date": "2026-10-17T…Z",
+  "engine": "rag.retrieval+rag.calculator+rag.answer",
+  "index_path": "…/data/index.jsonl",
+  "index_exists": true
 }
 ```
 
-Request body is limited to 1 MB; rate limits are per-IP (in-memory).
+### POST /v1/calculate
 
----
+Backward-compatible body is just `description` + `value`. Extended
+fields: `hts_code`, `quantity`, `quantity_unit`, `origin_country`,
+`program`, `mode` (`ocean|air|land|mail`), `quota_status`
+(`in|out|unknown`), `chapter99_stack`, `de_minimis`, `mpf_config`,
+`hmf_config`.
 
-## Data pipeline
-
-- `scripts/build_tariff_data.py` - reads `tariffs.xlsx` with only the standard library
-  and emits `backend/data/tariffs.json` + `tariffs.json.gz`. It also normalizes tariff
-  rates and derives a concise, self-contained `search_text` from the specific tariff
-  line (not the huge shared chapter heading), which improves both lexical and semantic
-  matching.
-- `scripts/build_embeddings.py` - embeds every tariff line with the configured LLM and
-  writes `embeddings.npz` / `embeddings.json` + `embeddings_meta.json`. A corpus
-  fingerprint in the metadata makes stale caches self-invalidating.
-
----
-
-## Project structure
-
-```
-├── backend/
-│   ├── app.py                   # Flask application factory
-│   ├── config.py                # Constants, thresholds, logging
-│   ├── models.py                # ProductMatch, FeeBreakdown dataclasses
-│   ├── validators.py            # Input validation
-│   ├── routes/                  # Flask routes (health, calculate)
-│   ├── services/
-│   │   ├── llm_client.py        # chat LLM client (DeepSeek / OpenAI-compatible)
-│   │   ├── embedding.py         # LLM embedding provider (OpenAI-compatible)
-│   │   ├── semantic_matcher.py  # LLM ranking + embedding search + TF-IDF fallback
-│   │   ├── pipeline.py          # shared calculate pipeline
-│   │   ├── tariff_data.py       # dataset loading
-│   │   ├── fee_calculator.py    # duty/MPF/HMF
-│   │   └── calculation_logger.py
-│   └── data/tariffs.json.gz     # pre-built dataset (committed)
-├── netlify/functions/           # serverless backend (calculate, health)
-├── scripts/                     # data + embedding build scripts
-├── TariffUI/                    # Next.js frontend (static export)
-├── tests/                       # stdlib-only smoke tests
-├── netlify.toml                 # static export + functions + rewrites
-├── Dockerfile / Procfile / nixpacks.toml   # container/PaaS options
-└── tariffs.xlsx                 # source tariff data
+```bash
+curl -X POST localhost:5000/v1/calculate -H 'Content-Type: application/json' -d '{
+  "description": "Electric motor",
+  "hts_code": "8501.51.20",
+  "value": 1000,
+  "origin_country": "China",
+  "mode": "ocean",
+  "chapter99_stack": ["9903.88.01"]
+}'
 ```
 
----
+Response: `match`, `breakdown`, `total_duty`, `warnings`, `citations`,
+`provenance`, `inputs_echo`, `computable`, `disclaimer`.
 
-## Troubleshooting
+Validation: `description` 3–500 chars (apostrophes, semicolons,
+commas, quotes, `+`, `%` allowed); `value` 0.01–100,000,000 as a
+finite Decimal (booleans, NaN, and infinities rejected).
 
-- **"Tariff dataset not found"** - run `python scripts/build_tariff_data.py`.
-- **LLM matching not active** - verify `LLM_PROVIDER`, `LLM_API_KEY`, and `LLM_MODEL`.
-  The health endpoint reports the active engine and model; it should show
-  `"engine": "llm"` when configured correctly. (For the embeddings path, verify
-  `EMBEDDING_PROVIDER` and run `python scripts/build_embeddings.py`.)
-- **Frontend can't reach the API** - set `NEXT_PUBLIC_API_URL` (separate backend) or
-  leave it empty and confirm the Netlify functions and `/v1/*` rewrites are deployed.
-- **Rate limit exceeded** - wait for the per-IP window to reset.
+### POST /v1/rag/query
+
+```bash
+curl -X POST localhost:5000/v1/rag/query -H 'Content-Type: application/json' -d '{
+  "question": "Is Free (A) claimable under GSP right now?",
+  "top_k": 5
+}'
+```
+
+Response: `answer`, `citations`, `chunks`, `abstained`, `warnings`,
+`provenance`, `disclaimer`. Abstains when nothing is retrieved.
+
+## Tests
+
+```bash
+python -m pytest tests/ -q
+```
+
+Flask tests use `test_client` and skip if Flask is missing; validator,
+config, Netlify-adapter, and CLI-guard tests run regardless.
+
+## Docs
+
+- `CONTRACTS.md` — authoritative shared contracts (all modules).
+- `GROUNDING.md` — PDF facts, traps, and what must be verified in-PDF.
+- `AUDIT.md` — prior-audit bugs → fixes mapping.
+- `docs/` — pointer to the docs above.

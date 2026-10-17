@@ -1,82 +1,54 @@
+"""Netlify Function adapter for GET /v1/health.
+
+Thin adapter: ALL logic lives in ``backend.services.pipeline``.
+Generic 500 on unexpected errors (no exception detail ever leaks).
 """
-Netlify Functions adapter for GET /v1/health.
-"""
+
 import json
-import os
+import logging
 import sys
-from datetime import datetime, timezone
+import uuid
+from pathlib import Path
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-for _p in (_HERE, os.path.dirname(_HERE), os.path.dirname(os.path.dirname(_HERE))):
-    if _p and _p not in sys.path:
-        sys.path.insert(0, _p)
-
-from backend.config import API_VERSION
-from backend.services.tariff_data import TariffDataService
-from backend.services.fee_calculator import FeeCalculator
-from backend.services.calculation_logger import CalculationLogger
-
-_SERVICES = None
+log = logging.getLogger(__name__)
 
 
-def _get_services():
-    global _SERVICES
-    if _SERVICES is None:
-        tariff_service = TariffDataService()
-        tariff_service.load_data()
-        _SERVICES = (tariff_service, FeeCalculator(), CalculationLogger())
-    return _SERVICES
+def _ensure_project_on_path():
+    here = Path(__file__).resolve()
+    for candidate in [here.parent, *here.parents]:
+        if (candidate / "backend" / "services" / "pipeline.py").exists():
+            if str(candidate) not in sys.path:
+                sys.path.insert(0, str(candidate))
+            return
+    root = here.parents[2]
+    if str(root) not in sys.path:
+        sys.path.insert(0, str(root))
+
+
+_ensure_project_on_path()
+
+from backend.services import pipeline  # noqa: E402
 
 
 def _response(status_code, payload):
     return {
         "statusCode": status_code,
-        "headers": {"Content-Type": "application/json"},
+        "headers": {
+            "Content-Type": "application/json",
+            "X-Request-ID": uuid.uuid4().hex,
+        },
         "body": json.dumps(payload),
     }
 
 
-def handler(event, context):
+def handler(event, context=None):
     try:
-        tariff_service, _, calculation_logger = _get_services()
-        matcher = getattr(tariff_service, "matcher", None)
-        provider = getattr(tariff_service, "provider", None)
-        llm_client = getattr(tariff_service, "llm_client", None)
-
-        checks = {
-            "tariff_data": bool(getattr(tariff_service, "records", None)),
-            "matcher": matcher is not None,
-        }
-
-        if llm_client is not None:
-            engine, engine_provider, engine_model = (
-                "llm",
-                llm_client.name,
-                llm_client.model,
-            )
-        elif provider is not None:
-            engine, engine_provider, engine_model = (
-                "llm_embeddings",
-                provider.name,
-                getattr(matcher, "embedding_model", None) or provider.model,
-            )
-        else:
-            engine, engine_provider, engine_model = "lexical_tfidf", "none", None
-
-        payload = {
-            "status": "healthy" if all(checks.values()) else "degraded",
-            "version": API_VERSION,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "checks": checks,
-            "matching": {
-                "engine": engine,
-                "provider": engine_provider,
-                "model": engine_model,
-                "records": len(getattr(tariff_service, "records", [])),
-            },
-            "logging": calculation_logger.backend,
-        }
-        return _response(200 if all(checks.values()) else 503, payload)
-
-    except Exception as exc:
-        return _response(503, {"status": "unhealthy", "error": str(exc)})
+        method = (event or {}).get("httpMethod", "GET")
+        if method != "GET":
+            return _response(405, {"error": {"code": "method_not_allowed",
+                                             "message": "Method not allowed."}})
+        return _response(200, pipeline.health_info())
+    except Exception:
+        log.exception("Netlify health adapter failed")
+        return _response(500, {"error": {"code": "internal_error",
+                                         "message": "Internal error."}})
