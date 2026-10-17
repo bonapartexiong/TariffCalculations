@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tariff Calculator — HTS 2026 Rev 21</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <h1>Tariff Calculator</h1>
+  <p class="grounding">Rates from HTS 2026 Revision 21 (Pub. 5802) — an estimate, not a binding classification. Confirm the 8-digit line with your broker before importing.</p>
+  <div class="api-bar">
+    <label for="apiBase">API base URL</label>
+    <input id="apiBase" type="text" value="http://localhost:5000" spellcheck="false">
+    <button id="checkApi" class="secondary" type="button">Check API</button>
+    <span id="healthBadge" class="badge info">Checking API…</span>
+  </div>
+</header>
+
+<main>
+  <!-- ============================ CALCULATE ============================ -->
+  <section class="card" id="calcCard">
+    <h2>Estimate import duty</h2>
+    <p class="muted">Type the product the way an importer would describe it. The app finds the closest HTS line and computes the duty.</p>
+
+    <label for="description">Product description</label>
+    <textarea id="description" placeholder="leather handbag, sneakers, laptop computer…">leather handbag</textarea>
+
+    <div class="row">
+      <div>
+        <label for="value">Import value (USD)</label>
+        <input id="value" type="number" min="0.01" step="0.01" value="500">
+      </div>
+      <div>
+        <label for="htsOverride">HTS override <span class="hint">(optional — exact line, e.g. 4202.21.90)</span></label>
+        <input id="htsOverride" type="text" placeholder="4202.21.90" spellcheck="false">
+      </div>
+    </div>
+
+    <details id="advanced">
+      <summary>Advanced — quantity, origin, mode, program, Chapter 99</summary>
+      <div class="row">
+        <div>
+          <label for="quantity">Quantity <span class="hint">(required when the rate is specific/compound, e.g. ¢/kg)</span></label>
+          <input id="quantity" type="number" min="0" step="any" placeholder="e.g. 100">
+        </div>
+        <div>
+          <label for="quantityUnit">Quantity unit</label>
+          <input id="quantityUnit" type="text" placeholder="kg, liter, each, pair…" spellcheck="false">
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label for="origin">Origin country <span class="hint">(blank = Column 1 General)</span></label>
+          <input id="origin" type="text" list="countries" placeholder="e.g. China, Mexico, Vietnam" spellcheck="false">
+          <datalist id="countries">
+            <option value="China"></option><option value="Mexico"></option><option value="Canada"></option>
+            <option value="Vietnam"></option><option value="India"></option><option value="Germany"></option>
+            <option value="Japan"></option><option value="Korea, South"></option><option value="Taiwan"></option>
+            <option value="Italy"></option><option value="United Kingdom"></option><option value="Bangladesh"></option>
+            <option value="Indonesia"></option><option value="Thailand"></option><option value="Malaysia"></option>
+            <option value="Philippines"></option><option value="Pakistan"></option><option value="Brazil"></option>
+            <option value="Colombia"></option><option value="Peru"></option><option value="Turkey"></option>
+            <option value="North Korea"></option><option value="Belarus"></option><option value="Russia"></option><option value="Cuba"></option>
+          </datalist>
+        </div>
+        <div>
+          <label for="mode">Shipment mode</label>
+          <select id="mode">
+            <option value="">Unspecified</option>
+            <option value="ocean">Ocean (HMF applies)</option>
+            <option value="air">Air</option>
+            <option value="land">Land</option>
+            <option value="mail">Mail</option>
+          </select>
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label for="program">Special program <span class="hint">(default: auto = lowest applicable Special)</span></label>
+          <select id="program">
+            <option value="auto" selected>Auto — lowest applicable Special</option>
+            <option value="">General only (no program)</option>
+            <option value="A">A — GSP (lapsed — not currently claimable)</option>
+            <option value="S">S — USMCA</option>
+            <option value="AU">AU — Australia</option>
+            <option value="BH">BH — Bahrain</option>
+            <option value="CL">CL — Chile</option>
+            <option value="CO">CO — Colombia</option>
+            <option value="D">D — AGOA</option>
+            <option value="E">E — CBERA</option>
+            <option value="IL">IL — Israel</option>
+            <option value="JO">JO — Jordan</option>
+            <option value="KR">KR — Korea</option>
+            <option value="MA">MA — Morocco</option>
+            <option value="OM">OM — Oman</option>
+            <option value="P">P — Panama</option>
+            <option value="PA">PA — Peru</option>
+            <option value="PE">PE — Peru (alt.)</option>
+            <option value="SG">SG — Singapore</option>
+          </select>
+        </div>
+        <div>
+          <label for="quota">Quota status</label>
+          <select id="quota">
+            <option value="unknown" selected>Unknown</option>
+            <option value="in">In-quota</option>
+            <option value="out">Over-quota</option>
+          </select>
+        </div>
+      </div>
+      <label for="ch99">Chapter 99 stacking (comma-separated HTS, e.g. 9903.88.01 for China §301)</label>
+      <input id="ch99" type="text" placeholder="9903.88.01" spellcheck="false">
+      <label><input id="deMinimis" type="checkbox"> De minimis (§321) — value $800 or less, origin not suspended</label>
+    </details>
+
+    <div class="chips" id="chips">
+      <button class="chip" type="button" data-desc="leather handbag" data-value="500">leather handbag · $500</button>
+      <button class="chip" type="button" data-desc="sneakers" data-value="200">sneakers · $200</button>
+      <button class="chip" type="button" data-desc="electric motor" data-value="1000">electric motor · $1,000</button>
+      <button class="chip" type="button" data-desc="coffee beans" data-value="1000">coffee beans · $1,000</button>
+      <button class="chip" type="button" data-desc="peanuts" data-value="1000" data-qty="100" data-unit="kg">peanuts · 100 kg · $1,000</button>
+    </div>
+
+    <p style="margin-top:14px">
+      <button id="calcBtn" type="button">Calculate duty</button>
+      <button id="clearHts" class="secondary" type="button" hidden>Clear HTS override</button>
+    </p>
+    <div id="calcError" class="alert-bad" hidden></div>
+    <div id="calcLoading" class="muted" hidden>Calculating…</div>
+  </section>
+
+  <!-- ============================ RESULTS ============================ -->
+  <section id="results" hidden>
+    <div class="card" id="matchCard" hidden>
+      <h2>Best match</h2>
+      <div class="hts-big" id="matchHts"></div>
+      <p class="full-desc" id="matchDesc"></p>
+      <p><span class="badge info" id="matchType"></span> <span class="badge info" id="matchScore"></span> <span class="badge warn" id="matchWarning" hidden></span> <span class="badge bad" id="matchNonDutiable" hidden>Non-dutiable row — not a classification</span></p>
+      <p class="muted" id="matchCitation"></p>
+    </div>
+
+    <div class="card" id="rateCard" hidden>
+      <h2>Rate</h2>
+      <table class="rates">
+        <thead><tr><th>Column</th><th>Rate (as printed in HTS)</th><th>Applied?</th></tr></thead>
+        <tbody>
+          <tr id="rowGeneral"><td>General (Column 1)</td><td id="rateGeneral"></td><td id="appliedGeneral"></td></tr>
+          <tr id="rowSpecial"><td>Special</td><td id="rateSpecial"></td><td id="appliedSpecial"></td></tr>
+          <tr id="rowCol2"><td>Column 2</td><td id="rateCol2"></td><td id="appliedCol2"></td></tr>
+        </tbody>
+      </table>
+      <p id="rateReason" class="muted"></p>
+      <p id="gspNote" class="alert-info" hidden>GSP (program A) is lapsed as of HTS 2026 Rev 21, General Note 4 — Free (A) is not currently claimable. The Special column may still list it; the calculator does not treat it as claimable without a flag.</p>
+      <p class="muted" id="rateUnit"></p>
+    </div>
+
+    <div class="card" id="breakdownCard" hidden>
+      <h2>Duty breakdown</h2>
+      <table class="breakdown">
+        <tbody id="breakdownRows"></tbody>
+      </table>
+      <p class="muted">Each component is rounded to the nearest cent (HALF_UP); the subtotal is the sum of the rounded components. MPF and HMF come from CBP fee config (external to the HTS PDF), not from the PDF itself.</p>
+    </div>
+
+    <div class="card" id="uncomputableCard" hidden>
+      <h2>Cannot compute a duty for this line</h2>
+      <p id="uncomputableWhy"></p>
+      <p id="uncomputableFix" class="muted"></p>
+      <p class="muted" id="uncomputableCitation"></p>
+    </div>
+
+    <div class="card" id="warningsCard" hidden>
+      <h2>Warnings &amp; flags</h2>
+      <ul class="warnings" id="warningsList"></ul>
+    </div>
+
+    <details class="card" id="rawDetails" hidden>
+      <summary>Raw API response (for debugging)</summary>
+      <pre id="rawJson"></pre>
+    </details>
+  </section>
+
+  <!-- ============================ CANDIDATES ============================ -->
+  <section class="card" id="candidatesCard" hidden>
+    <h2>Is this the right product? Pick a candidate</h2>
+    <p class="muted">Free-text matching is best-effort. If the best match is wrong, click the correct line — it re-runs the calculation with that HTS.</p>
+    <div id="candidatesLoading" class="muted" hidden>Loading candidates…</div>
+    <div id="candidatesError" class="alert-bad" hidden></div>
+    <div class="candidates" id="candidatesList"></div>
+  </section>
+
+  <!-- ============================ Q&A ============================ -->
+  <section class="card" id="qaCard">
+    <h2>Ask about this product / GSP / §301</h2>
+    <label for="question">Question</label>
+    <input id="question" type="text" placeholder="Is GSP still available? What is the §301 rate for China?" spellcheck="false">
+    <p style="margin-top:10px"><button id="askBtn" type="button">Ask</button></p>
+    <div id="qaError" class="alert-bad" hidden></div>
+    <div id="qaLoading" class="muted" hidden>Asking…</div>
+    <div id="qaResult" hidden>
+      <p><span class="badge bad" id="qaAbstain" hidden>Abstained — no grounded answer found</span></p>
+      <p class="qa-answer" id="qaAnswer"></p>
+      <h3>Sources</h3>
+      <ul class="citations" id="qaCitations"></ul>
+      <div id="qaWarnings"></div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <p><strong>Disclaimer:</strong> Estimate only — not a binding classification. Verify the classification, notes, and any Chapter 99 effective period with CBP or your broker before importing. MPF/HMF figures come from CBP fee config (external to the HTS PDF).</p>
+  <p id="provenance">Provenance: —</p>
+  <p>How matching works: BM25 over the full hierarchical HTS description (heading + group + leaf) with synonym expansion. Layman input is best-effort — always confirm the 8-digit dutiable line. See <a href="../GROUNDING.md">GROUNDING.md</a> in the repo for the grounding rules.</p>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>

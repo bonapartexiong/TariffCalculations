@@ -440,6 +440,17 @@ class HTSParser:
         # as a section header, which must not become a duplicate row.
         self._prior_page_hts: set[str] = set()
         self.endnotes: dict[str, str] = {}  # "ch{chapter}:{marker}" -> text
+        # Pending group-title lines (see _parse_table_page): HTS group
+        # titles such as "Handbags, whether or not with shoulder strap,
+        # including those without handle:" carry the product-group
+        # distinction (handbags vs trunks vs wallets in 4202) that the
+        # 6-digit subheading rows alone do NOT state. They sit at
+        # x0~=125 (one indent deeper than normal description text at
+        # x0~=111), with no HTS number and no rate words. They belong
+        # to the NEXT row, not the previous one — without them, every
+        # 4202 leaf matches "handbag" equally via the heading
+        # enumeration and retrieval cannot tell handbags from trunks.
+        self._pending_group: list[str] = []
         self.stats: dict = {
             "pages_parsed": 0,
             "pages_skipped": 0,
@@ -743,6 +754,13 @@ class HTSParser:
                 first_row_start = False
                 flush()
                 current = self._new_row(page_no, self.chapter, self.section)
+                # Adopt any pending group title as this row's leading
+                # description (it belongs to the NEXT row, e.g.
+                # "Handbags..." -> the 4202.21 subheading row, whose
+                # leaves inherit it via ancestor propagation).
+                if self._pending_group:
+                    current["desc_parts"].append(" ".join(self._pending_group))
+                    self._pending_group = []
                 if hts_match is not None:
                     current["hts"] = hts_match
                     current["hts_col"] = hts_match
@@ -764,9 +782,21 @@ class HTSParser:
                     current["suffix"] = suffix_val
                     current["hts_col"] = parent_hts
                     if parent_8 is not None:
-                        current["hts"] = parent_8 + suffix_val
+                        # 10-digit HTS keeps the dot: 0901.11.00 + .65,
+                        # NOT "0901.11.0065" (the old concatenation
+                        # dropped the dot and produced a malformed code).
+                        current["hts"] = parent_8 + "." + suffix_val
                     current["dutiable"] = False
                 self._append_line(current, buckets, markers, cols)
+            elif self._is_group_title_line(buckets, markers, current):
+                # Group-title line (no HTS, indented to x0~=125, no
+                # rate words): it introduces the NEXT group, so flush
+                # the current row and hold it for the next row start
+                # instead of appending it to the previous row.
+                flush()
+                self._pending_group.append(
+                    " ".join(w[4] for w in buckets.get("desc", []))
+                )
             elif current is not None:
                 self._append_line(current, buckets, markers, cols)
             else:
@@ -774,6 +804,49 @@ class HTSParser:
                 self.stats["dropped_preamble_lines"] += 1
         self._prior_page_hts |= page_hts
         return chunks, current
+
+    def _is_group_title_line(self, buckets, markers, current) -> bool:
+        """True for HTS group-title lines ("Handbags, whether or not...").
+
+        Group titles have no HTS number and no rate words, and their
+        description text sits one indent deeper (x0 >= 120) than
+        normal description text (x0 ~= 111). Footnote markers or any
+        rate-column words disqualify the line.
+
+        Indent alone is NOT enough: a deeply indented row's own
+        description continuations also sit at x0 >= 120 (e.g.
+        6404.11.20's "external surface area..." at x0=154). A
+        continuation belongs to the still-open row, a group title to
+        the NEXT row — distinguish them by whether the open row is
+        already complete: a group title follows a row that already
+        has rate words, or whose description ends with ":" (a
+        finished subheading phrase). An open row with no rates yet
+        and an unfinished description ("...over 50 percent of the")
+        is still being built, so the line is its continuation.
+        """
+        if markers:
+            return False
+        desc = buckets.get("desc", [])
+        if not desc:
+            return False
+        if any(
+            buckets.get(col)
+            for col in ("unit", "general", "special", "col2", "additional", "effective")
+        ):
+            return False
+        if min(w[0] for w in desc) < 120:
+            return False
+        if current is None:
+            return True
+        if any(
+            current.get(key)
+            for key in (
+                "unit_parts", "general_parts", "special_parts",
+                "col2_parts", "effective_parts",
+            )
+        ):
+            return True
+        return " ".join(current.get("desc_parts", [])).strip().endswith(":")
 
     def _append_line(
         self, row: dict, buckets: dict[str, list[tuple]], markers: list[str], cols: dict
@@ -810,6 +883,9 @@ class HTSParser:
             if chunk is not None:
                 chunks.append(chunk)
             pending = None
+        # Prose breaks table context: a pending group title must not
+        # leak into the next chapter's first row.
+        self._pending_group = []
 
         body = [w for w in words if BODY_TOP <= w[1] <= BODY_BOTTOM]
         lines = cluster_lines(body)
@@ -1116,6 +1192,83 @@ def parse_pages_spec(spec: str) -> list[int]:
     return sorted(set(pages))
 
 
+def _is_hts_prefix(ancestor: str | None, hts: str | None) -> bool:
+    """True when ``ancestor`` is a proper HTS prefix of ``hts``.
+
+    "4202" < "4202.21" < "4202.21.90" < "4202.21.90.10". The trailing
+    "." guard prevents "4202.2" matching "4202.21".
+    """
+    if not ancestor or not hts or ancestor == hts:
+        return False
+    return hts.startswith(ancestor + ".")
+
+
+def propagate_ancestor_descriptions(chunks: list[dict]) -> list[dict]:
+    """Propagate ancestor descriptions into each tariff-line chunk.
+
+    Leaf descriptions are hierarchical fragments: 4202.21.90 is only
+    "Valued over $20 each" — it contains neither "leather" nor
+    "handbag". Those words live on the ancestor rows (4202 heading,
+    4202.21 subheading). Without propagation, free-text retrieval
+    cannot match layman descriptions to the correct leaf.
+
+    For each tariff_line / chapter99 chunk in document order, maintain
+    a stack of ancestor (hts, description) rows. Ancestors are the
+    stack entries whose HTS is a proper prefix of the current HTS.
+    The chunk gets:
+
+    - ``full_description``: ancestors + own description, joined with
+      " | " (ancestor trailing ":" stripped for readability).
+    - ``search_text``: HTS + full_description (retrieval convenience).
+
+    Leaf ``description`` is left intact. Non-tariff chunks (notes, GRI,
+    appendix) are untouched — their ``text`` is already self-contained.
+    The stack resets when the chapter changes, so a heading from one
+    chapter can never leak into the next.
+    """
+    stack: list[tuple[str, str]] = []  # (hts, description)
+    stack_chapter: int | None = None
+    for chunk in chunks:
+        if chunk.get("kind") not in ("tariff_line", "chapter99"):
+            continue
+        hts = chunk.get("hts")
+        chapter = chunk.get("chapter")
+        if chapter is not None and stack_chapter is not None and chapter != stack_chapter:
+            stack = []
+        if chapter is not None:
+            stack_chapter = chapter
+        if not hts:
+            own = (chunk.get("description") or "").strip()
+            chunk["full_description"] = own
+            chunk["search_text"] = own
+            continue
+        # Pop until the stack top is a proper prefix (an ancestor), or empty.
+        while stack and not _is_hts_prefix(stack[-1][0], hts):
+            stack.pop()
+        parts: list[str] = []
+        for _hts, desc in stack:
+            desc = (desc or "").strip()
+            if not desc:
+                continue
+            # Ancestor fragments end with ":" — strip it when joining.
+            desc = desc.rstrip().rstrip(":").rstrip()
+            if desc and desc not in parts:
+                parts.append(desc)
+        own = (chunk.get("description") or "").strip()
+        if own and own not in parts:
+            parts.append(own)
+        full = " | ".join(parts)
+        chunk["full_description"] = full
+        chunk["search_text"] = (f"{hts} {full}".strip() if full else hts)
+        # Push this row: it is the ancestor for following deeper rows.
+        # Replace a same-HTS entry (e.g. a re-printed heading) in place.
+        if stack and stack[-1][0] == hts:
+            stack[-1] = (hts, own)
+        else:
+            stack.append((hts, own))
+    return chunks
+
+
 def parse_pdf(
     pdf_path: str | Path = DEFAULT_PDF,
     pages: list[int] | None = None,
@@ -1160,6 +1313,10 @@ def parse_pdf(
         if c.get("hts") and re.match(r"^\d{4}\.\d{2}$", c["hts"]):
             if c["hts"] not in eight_prefixes:
                 c["dutiable"] = True
+    # Hierarchical descriptions: propagate ancestor text into each leaf
+    # (full_description / search_text). Without this, leaves like
+    # 4202.21.90 ("Valued over $20 each") are unfindable by layman text.
+    propagate_ancestor_descriptions(chunks)
     lines = [c for c in chunks if c["kind"] in ("tariff_line", "chapter99")]
     return {
         "chunks": chunks,

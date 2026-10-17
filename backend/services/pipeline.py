@@ -262,14 +262,38 @@ def _find_match(cleaned, index):
                 return {
                     "hts": _chunk_get(chunk, "hts") or hts_code,
                     "description": _chunk_get(chunk, "description"),
+                    "full_description": _chunk_get(chunk, "full_description")
+                    or _chunk_get(chunk, "description"),
                     "match_type": "exact_hts",
+                    "score": 1.0,
                     "warning": warning,
                     "citation": _format_citation(chunk),
+                    "general_raw": _chunk_get(chunk, "general_raw"),
+                    "special_raw": _chunk_get(chunk, "special_raw"),
+                    "col2_raw": _chunk_get(chunk, "col2_raw"),
+                    "unit": _chunk_get(chunk, "unit"),
+                    "dutiable": _chunk_get(chunk, "dutiable"),
+                    "kind": _chunk_get(chunk, "kind"),
+                    "page": _chunk_get(chunk, "page"),
                     "_chunk": chunk,
                 }
         search = getattr(index, "search", None)
         if callable(search):
-            hits = search(cleaned.get("description", ""), top_k=1) or []
+            # For calculate, only a dutiable tariff line can produce a
+            # duty. dutiable_only=True restricts the pool BEFORE
+            # top_k, so headings/suffix rows cannot crowd the
+            # dutiable leaves out of the window. Fall back to the
+            # full pool (with its warning) only when no dutiable
+            # line matched at all.
+            try:
+                hits = search(
+                    cleaned.get("description", ""), top_k=1, dutiable_only=True
+                ) or []
+            except TypeError:
+                hits = search(cleaned.get("description", ""), top_k=1) or []
+            if not hits:
+                hits = search(cleaned.get("description", ""), top_k=1) or []
+            hits = hits[:1]
             if hits:
                 hit = hits[0]
                 chunk = hit.get("chunk") if isinstance(hit, dict) else getattr(hit, "chunk", None)
@@ -280,9 +304,19 @@ def _find_match(cleaned, index):
                     return {
                         "hts": _chunk_get(chunk, "hts"),
                         "description": _chunk_get(chunk, "description"),
+                        "full_description": _chunk_get(chunk, "full_description")
+                        or _chunk_get(chunk, "description"),
                         "match_type": hit.get("match_type") if isinstance(hit, dict) else None,
+                        "score": hit.get("score") if isinstance(hit, dict) else None,
                         "warning": warning,
                         "citation": _format_citation(chunk),
+                        "general_raw": _chunk_get(chunk, "general_raw"),
+                        "special_raw": _chunk_get(chunk, "special_raw"),
+                        "col2_raw": _chunk_get(chunk, "col2_raw"),
+                        "unit": _chunk_get(chunk, "unit"),
+                        "dutiable": _chunk_get(chunk, "dutiable"),
+                        "kind": _chunk_get(chunk, "kind"),
+                        "page": _chunk_get(chunk, "page"),
                         "_chunk": chunk,
                     }
     except Exception as exc:
@@ -471,6 +505,8 @@ def run_calculate(payload, index_path=None):
         public_match = {k: v for k, v in match.items() if k != "_chunk"}
     response = {
         "match": public_match,
+        "rate_applied": _jsonable(result.get("rate_applied"))
+        if isinstance(result.get("rate_applied"), dict) else None,
         "breakdown": _jsonable(result.get("breakdown") or []),
         "total_duty": _jsonable(result.get("total_duty"))
         if result.get("total_duty") is not None else None,
@@ -484,6 +520,108 @@ def run_calculate(payload, index_path=None):
     if confidence is not None:
         response["confidence"] = confidence
     return response
+
+
+# ---------------------------------------------------------------------------
+# Candidates (candidate picker for layman input)
+# ---------------------------------------------------------------------------
+
+
+def run_candidates(payload, index_path=None):
+    """Return top-5 retrieval hits for a free-text description.
+
+    Body: {"description" | "question": str, "top_k": 1-20 (default 5)}.
+    No rates are computed here — this is pure retrieval so the UI can
+    show the importer the top candidates and let them pick the right
+    one (which re-runs /v1/calculate with that HTS as hts_code).
+    """
+    if not isinstance(payload, dict):
+        raise ValidationError("Request body must be a JSON object.")
+    raw_q = payload.get("description", payload.get("question", payload.get("query")))
+    if not isinstance(raw_q, str) or not raw_q.strip():
+        raise ValidationError("Field 'description' is required.")
+    # Reuse the rag-query validator for length/top_k rules.
+    cleaned_q = validate_rag_query(
+        {"question": raw_q.strip(), "top_k": payload.get("top_k", 5)}
+    )
+    path = _resolve_index_path(index_path)
+    index = get_index(path)
+    meta = load_meta(path)
+    if index is None:
+        return {
+            "candidates": [],
+            "warnings": ["Tariff index unavailable; no candidates."],
+            "provenance": {
+                "revision": REVISION, "publication": PUBLICATION,
+                "source_pdf": SOURCE_PDF,
+                "source_pdf_sha256": meta.get("source_pdf_sha256"),
+                "index_path": path,
+            },
+            "disclaimer": DISCLAIMER,
+        }
+    try:
+        try:
+            hits = index.search(
+                cleaned_q["question"],
+                top_k=cleaned_q["top_k"],
+                dutiable_only=True,
+            ) or []
+        except TypeError:
+            hits = index.search(
+                cleaned_q["question"], top_k=cleaned_q["top_k"] * 3
+            ) or []
+            hits = [
+                h for h in hits
+                if isinstance(h, dict)
+                and isinstance(h.get("chunk"), dict)
+                and h["chunk"].get("kind") == "tariff_line"
+                and h["chunk"].get("dutiable")
+            ]
+    except Exception as exc:
+        log.warning("Candidates search failed: %s", exc)
+        hits = []
+    if not hits:
+        try:
+            hits = index.search(
+                cleaned_q["question"], top_k=cleaned_q["top_k"]
+            ) or []
+        except Exception as exc:
+            log.warning("Candidates fallback search failed: %s", exc)
+            hits = []
+    candidates = []
+    for hit in hits:
+        chunk = hit.get("chunk") if isinstance(hit, dict) else None
+        if chunk is None:
+            continue
+        candidates.append({
+            "hts": _chunk_get(chunk, "hts"),
+            "description": _chunk_get(chunk, "description"),
+            "full_description": _chunk_get(chunk, "full_description")
+            or _chunk_get(chunk, "description"),
+            "general_raw": _chunk_get(chunk, "general_raw"),
+            "special_raw": _chunk_get(chunk, "special_raw"),
+            "col2_raw": _chunk_get(chunk, "col2_raw"),
+            "unit": _chunk_get(chunk, "unit"),
+            "score": clamp_confidence(hit.get("score")) if isinstance(hit, dict) else None,
+            "match_type": hit.get("match_type") if isinstance(hit, dict) else None,
+            "warning": hit.get("warning") if isinstance(hit, dict) else None,
+            "citation": _format_citation(chunk),
+            "dutiable": bool(_chunk_get(chunk, "dutiable")),
+            "kind": _chunk_get(chunk, "kind"),
+            "page": _chunk_get(chunk, "page"),
+        })
+    return {
+        "candidates": candidates,
+        "warnings": [],
+        "provenance": {
+            "revision": meta.get("revision", REVISION),
+            "publication": meta.get("publication", PUBLICATION),
+            "source_pdf": SOURCE_PDF,
+            "source_pdf_sha256": meta.get("source_pdf_sha256"),
+            "index_path": path,
+        },
+        "disclaimer": DISCLAIMER,
+    }
 
 
 # ---------------------------------------------------------------------------

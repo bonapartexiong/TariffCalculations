@@ -108,6 +108,106 @@ python -m backend.app                    # dev server on 127.0.0.1:$PORT
 gunicorn 'backend.app:create_app()' --bind 0.0.0.0:$PORT
 ```
 
+## Frontend
+
+Importer-facing single-page app in `frontend/` — vanilla HTML/CSS/JS,
+no build step. Type a layman product description and an import value;
+the app finds the closest HTS match, shows the tariff calculation, and
+lets you correct a wrong best-match by picking from the top candidates.
+
+```bash
+# 1. Start the API (default http://localhost:5000)
+python -m backend.app
+# 2. Open the frontend — either serve the repo and visit /frontend/,
+#    or open frontend/index.html directly in a browser.
+python -m http.server 8000   # then open http://localhost:8000/frontend/
+```
+
+The API base URL is editable in the page header (default
+`http://localhost:5000`, persisted in `localStorage`). The page shows a
+health badge from `GET /v1/health` (revision, chunk count, ok/degraded)
+and a clear error if the API is unreachable.
+
+What the page shows, all from API responses (the JS never invents a rate):
+
+- **Best match** — HTS (big), full hierarchical description
+  (heading + group + leaf), match type + score, citation
+  `(HTS, p.N, Rev 21)`, warning if non-dutiable / heading /
+  low-confidence.
+- **Rate** — General / Special / Column 2 raw rates as printed, which
+  rate was applied and why (`rate_applied` from the API), plus a
+  GSP-lapsed flag whenever Special lists Free (A).
+- **Duty breakdown** — base duty, Chapter 99 stacking lines (e.g.
+  §301 +25%), MPF (with a minimum/cap-applied note from the API when
+  it binds), HMF (ocean-only — $0 + reason when not ocean),
+  subtotal/total. Each component is rounded to cents (HALF_UP);
+  subtotal = sum of rounded components.
+- **Warnings & flags** — always visible, never hidden (TRQ, GSP
+  lapsed, §321, specific-rate-needs-quantity, cross-ref
+  uncomputable, Ch. 99 expiry).
+- **Uncomputable state** — plain-language WHY (e.g. "This line's rate
+  is 'see note X' — no number to compute"), what input would fix it
+  (e.g. enter quantity + unit), and the retrieved line + citation.
+  Never $0.00 as a computed total for an uncomputable rate.
+- **Candidate picker** — top 5 from `POST /v1/candidates` as clickable
+  cards. Clicking one re-runs the calculation with that HTS as
+  `hts_code` and highlights the selection. This is how an importer
+  corrects a wrong best-match.
+- **Q&A** — "Ask about this product / GSP / §301" via
+  `POST /v1/rag/query`, with answer + citations + abstain state.
+- **Footer** — estimate-only disclaimer, provenance (revision, PDF
+  SHA short, index build date from `/v1/health`).
+
+### Deploying the static frontend
+
+The frontend is static files only (`frontend/index.html`,
+`frontend/app.js`, `frontend/style.css`) — deploy it anywhere and
+point the in-page API base URL at a running API:
+
+- **Netlify Drop:** drag the `frontend/` folder onto Netlify Drop.
+- **GitHub Pages:** publish the repo (or the `frontend/` folder) and
+  open the Pages URL; the API must be reachable from the browser
+  (same-origin or CORS-enabled — see `ALLOWED_ORIGINS` in
+  `.env.example`).
+- **Same-origin:** serve `frontend/` from the same host as the API
+  and leave the API base URL at its default.
+
+### Layman-input limitations
+
+Free-text matching is best-effort BM25 over the full hierarchical
+description plus synonym expansion — it does not understand intent.
+It can still pick a near-miss (e.g. a plastics handbag for a leather
+one, or a waste line for a product). Always confirm the 8-digit
+dutiable line via the candidate picker before relying on a rate, and
+check the chapter notes for anything the description does not state
+(TRQ, exclusions, Chapter 99 effective periods).
+
+### Test with your own descriptions
+
+```bash
+# curl — calculate
+curl -X POST localhost:5000/v1/calculate -H 'Content-Type: application/json' -d '{
+  "description": "leather handbag", "value": 500
+}'
+# curl — candidates (candidate picker)
+curl -X POST localhost:5000/v1/candidates -H 'Content-Type: application/json' -d '{
+  "description": "leather handbag", "top_k": 5
+}'
+# curl — Q&A
+curl -X POST localhost:5000/v1/rag/query -H 'Content-Type: application/json' -d '{
+  "question": "Is Free (A) claimable under GSP right now?", "top_k": 5
+}'
+```
+
+```python
+# Python one-liner (from the repo root, venv active)
+python -c "
+from backend.services.pipeline import run_calculate, run_rag_query
+print(run_calculate({'description': 'leather handbag', 'value': 500}))
+print(run_rag_query({'question': 'Is Free (A) claimable under GSP right now?'}))
+"
+```
+
 ## Run the demo
 
 ```bash
@@ -155,12 +255,32 @@ curl -X POST localhost:5000/v1/calculate -H 'Content-Type: application/json' -d 
 }'
 ```
 
-Response: `match`, `breakdown`, `total_duty`, `warnings`, `citations`,
+Response: `match` (with `general_raw`, `special_raw`, `col2_raw`,
+`unit`, `score`, `dutiable`, `citation`), `rate_applied`
+(`column` / `program` / `raw` / `kind` / `reason`),
+`breakdown`, `total_duty`, `warnings`, `citations`,
 `provenance`, `inputs_echo`, `computable`, `disclaimer`.
 
 Validation: `description` 3–500 chars (apostrophes, semicolons,
 commas, quotes, `+`, `%` allowed); `value` 0.01–100,000,000 as a
 finite Decimal (booleans, NaN, and infinities rejected).
+
+### POST /v1/candidates
+
+Candidate picker for layman input — pure retrieval, no rates computed.
+Body: `{"description" | "question" | "query", "top_k"}` (default 5).
+Returns `candidates` (each with `hts`, `description`,
+`full_description`, `general_raw`, `special_raw`, `col2_raw`,
+`unit`, `score`, `match_type`, `warning`, `citation`, `dutiable`,
+`kind`, `page`), `warnings`, `provenance`, `disclaimer`. Only
+dutiable tariff lines are returned when any match (falls back to all
+hits otherwise).
+
+```bash
+curl -X POST localhost:5000/v1/candidates -H 'Content-Type: application/json' -d '{
+  "description": "leather handbag", "top_k": 5
+}'
+```
 
 ### POST /v1/rag/query
 

@@ -23,3 +23,13 @@ if rag_bp is not None:
             raise ValidationError("Request body must be a JSON object.")
         result = pipeline.run_rag_query(payload)
         return jsonify(result), 200
+
+    @rag_bp.route("/v1/candidates", methods=["POST"])
+    def candidates():
+        payload = request.get_json(silent=True)
+        if payload is None:
+            raise ValidationError("Request body must be a valid JSON object.")
+        if not isinstance(payload, dict):
+            raise ValidationError("Request body must be a JSON object.")
+        result = pipeline.run_candidates(payload)
+        return jsonify(result), 200

@@ -137,7 +137,7 @@ def _normalize_program(program):
     s = str(program).strip().upper().strip("()").strip()
     if s == "GSP":
         return "A"
-    if s.lower() in ("auto-lowest", "auto_lowest", "auto lowest"):
+    if s.lower() in ("auto", "auto-lowest", "auto_lowest", "auto lowest"):
         return "AUTO-LOWEST"
     if s.replace("_", "-").lower() == "auto-lowest":
         return "AUTO-LOWEST"
@@ -392,6 +392,7 @@ def calculate(req):
                 warnings + ["No Column 2 rate available for this line."],
                 chunk, None, None,
                 explanation="No Column 2 rate available.",
+                rate_column="Column 2",
             )
     elif program and program != "AUTO-LOWEST":
         if program in specials:
@@ -437,12 +438,21 @@ def calculate(req):
     else:
         selected_rate = general_rate
 
+    # Column of the selected rate (for rate_applied reporting).
+    if is_col2:
+        rate_column = "Column 2"
+    elif selected_program:
+        rate_column = "Special"
+    else:
+        rate_column = "General"
+
     if selected_rate is None:
         return _result(
             req, False, Decimal("0"), [], Decimal("0"), Decimal("0"),
             warnings + ["No General rate available for this line."],
             chunk, None, selected_program,
             explanation="No General rate available.",
+            rate_column=rate_column,
         )
 
     # ------------------------------------------------------------- quota
@@ -467,7 +477,8 @@ def calculate(req):
                 "are $0." % value)
             return _result(
                 req, True, Decimal("0"), [], Decimal("0"), Decimal("0"),
-                warnings, chunk, selected_rate, selected_program)
+                warnings, chunk, selected_rate, selected_program,
+                rate_column=rate_column)
 
     # ---------------------------------------------------------- base duty
     base_duty, computable, explanation, dw = _duty_for_rate(
@@ -477,7 +488,7 @@ def calculate(req):
         return _result(
             req, False, Decimal("0"), [], Decimal("0"), Decimal("0"),
             warnings, chunk, selected_rate, selected_program,
-            explanation=explanation)
+            explanation=explanation, rate_column=rate_column)
 
     # --------------------------------------------------- Chapter 99 stacking
     ch99_duties = []
@@ -530,6 +541,19 @@ def calculate(req):
                 "MPF exempt under claimed program %s." % selected_program)
     else:
         mpf = min(max(value * mpf_rate, mpf_min), mpf_cap)
+        # State when the floor / ceiling binds, so the UI can show
+        # "MPF minimum applied" instead of leaving the importer to
+        # guess why MPF is $32.71 on a $10 shipment.
+        if value * mpf_rate < mpf_min:
+            warnings.append(
+                "MPF minimum $%s applied (%.4f%% of value would be $%s)."
+                % (mpf_min, mpf_rate * 100, _round(value * mpf_rate))
+            )
+        elif value * mpf_rate > mpf_cap:
+            warnings.append(
+                "MPF cap $%s applied (%.4f%% of value would be $%s)."
+                % (mpf_cap, mpf_rate * 100, _round(value * mpf_rate))
+            )
 
     # ----------------------------------------------------------------- HMF
     hmf_cfg = req.get("hmf_config") or req.get("hmf_override") or {}
@@ -554,12 +578,31 @@ def calculate(req):
     subtotal = base_r + sum(d["duty"] for d in ch99_duties) + mpf_r + hmf_r
     return _result(req, True, base_r, ch99_duties, mpf_r, hmf_r,
                    warnings, chunk, selected_rate, selected_program,
-                   subtotal=subtotal)
+                   subtotal=subtotal, rate_column=rate_column)
 
 
 def _result(req, computable, base_r, ch99_duties, mpf_r, hmf_r, warnings,
             chunk, selected_rate, selected_program, explanation=None,
-            subtotal=None):
+            subtotal=None, rate_column=None):
+    # Which rate was applied, and why — the UI's Rate card renders
+    # this directly (it must not guess from base_duty alone).
+    if rate_column == "Column 2":
+        _reason = "Origin is a Column 2 country — Column 2 rate applied."
+    elif rate_column == "Special":
+        _reason = "Special program %s applied." % selected_program
+        if str(req.get("program") or "").upper() in ("AUTO", "AUTO-LOWEST", "LOWEST"):
+            _reason += " Lowest applicable Special rate."
+    elif rate_column == "General":
+        _requested = str(req.get("program") or "").strip()
+        if _requested and _requested.upper() not in ("AUTO", "AUTO-LOWEST", "LOWEST", "NONE"):
+            _reason = (
+                "Requested program %s has no rate for this line — "
+                "General applied." % _requested
+            )
+        else:
+            _reason = "General applied — no program claimed."
+    else:
+        _reason = None
     if subtotal is None:
         subtotal = base_r + sum(d["duty"] for d in ch99_duties) + mpf_r + hmf_r
     citations = []
@@ -579,6 +622,13 @@ def _result(req, computable, base_r, ch99_duties, mpf_r, hmf_r, warnings,
         warnings = list(warnings) + [explanation]
     result = {
         "computable": computable,
+        "rate_applied": {
+            "column": rate_column,
+            "program": selected_program,
+            "raw": (selected_rate or {}).get("raw"),
+            "kind": (selected_rate or {}).get("kind"),
+            "reason": _reason,
+        },
         "breakdown": {
             "base_duty": base_r,
             "ch99_duties": ch99_duties,

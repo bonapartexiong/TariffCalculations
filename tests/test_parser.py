@@ -203,9 +203,9 @@ def test_statistical_suffix_row():
     chunks = chunks1 + chunks2
     by_hts = {c["hts"]: c for c in chunks}
     assert by_hts["0101.21.00"]["dutiable"] is True
-    assert by_hts["0101.21.0010"]["dutiable"] is False
-    assert by_hts["0101.21.0010"]["description"] == "Males"
-    assert by_hts["0101.21.0010"]["unit"] == "No."
+    assert by_hts["0101.21.00.10"]["dutiable"] is False
+    assert by_hts["0101.21.00.10"]["description"] == "Males"
+    assert by_hts["0101.21.00.10"]["unit"] == "No."
 
 
 def _ch99_page():
@@ -455,13 +455,13 @@ def test_phantom_running_head_suppressed():
     chunks_a, pending = parser.parse_page(page_a, 1589)
     # Page A flushed the 8-digit row when the suffix row started.
     assert [c["hts"] for c in chunks_a] == ["3004.90.92"]
-    assert pending is not None and pending["hts"] == "3004.90.9201"
+    assert pending is not None and pending["hts"] == "3004.90.92.01"
     chunks_b, pending_b = parser.parse_page(page_b, 1590, pending)
     # No duplicate 3004.90.92 chunk; the suffix row attaches to it.
-    assert [c["hts"] for c in chunks_b] == ["3004.90.9201"]
-    assert pending_b is not None and pending_b["hts"] == "3004.90.9202"
+    assert [c["hts"] for c in chunks_b] == ["3004.90.92.01"]
+    assert pending_b is not None and pending_b["hts"] == "3004.90.92.02"
     chunks_c, _ = parser.parse_page(FakePage([]), 1591, pending_b)
-    assert [c["hts"] for c in chunks_c] == ["3004.90.9202"]
+    assert [c["hts"] for c in chunks_c] == ["3004.90.92.02"]
 
 
 def test_con_reprint_suppressed():
@@ -505,10 +505,10 @@ def test_con_reprint_suppressed():
     assert [c["hts"] for c in chunks_a] == ["3004", "3004.90.92"]
     chunks_b, pending_b = parser.parse_page(page_b, 1590, pending)
     # The (con.) re-prints create no rows; pending suffix row flushes.
-    assert [c["hts"] for c in chunks_b] == ["3004.90.9201"]
-    assert pending_b is not None and pending_b["hts"] == "3004.90.9202"
+    assert [c["hts"] for c in chunks_b] == ["3004.90.92.01"]
+    assert pending_b is not None and pending_b["hts"] == "3004.90.92.02"
     chunks_c, _ = parser.parse_page(FakePage([]), 1591, pending_b)
-    assert [c["hts"] for c in chunks_c] == ["3004.90.9202"]
+    assert [c["hts"] for c in chunks_c] == ["3004.90.92.02"]
 
 
 def test_con_reprint_marker_on_next_line():
@@ -554,10 +554,10 @@ def test_con_reprint_marker_on_next_line():
     chunks_a, pending = parser.parse_page(page_a, 2171)
     assert [c["hts"] for c in chunks_a] == ["6110", "6110.20.10"]
     chunks_b, pending_b = parser.parse_page(page_b, 2172, pending)
-    assert [c["hts"] for c in chunks_b] == ["6110.20.1024"]
-    assert pending_b is not None and pending_b["hts"] == "6110.20.1026"
+    assert [c["hts"] for c in chunks_b] == ["6110.20.10.24"]
+    assert pending_b is not None and pending_b["hts"] == "6110.20.10.26"
     chunks_c, _ = parser.parse_page(FakePage([]), 2173, pending_b)
-    assert [c["hts"] for c in chunks_c] == ["6110.20.1026"]
+    assert [c["hts"] for c in chunks_c] == ["6110.20.10.26"]
 
 
 # ---------------------------------------------------------------------------

@@ -178,7 +178,13 @@ def answer_question(question, index, calculator=None, llm=None):
     lines = [GRI1_SCAFFOLD, "", "Classification candidates:"]
     for chunk in chunks:
         hts = chunk.get("hts") or "—"
-        desc = chunk.get("description") or (chunk.get("text") or "")[:200]
+        # Show the hierarchical description (ancestors + leaf), not the
+        # bare leaf fragment ("Valued over $20 each" alone means nothing).
+        desc = (
+            chunk.get("full_description")
+            or chunk.get("description")
+            or (chunk.get("text") or "")[:200]
+        )
         general = chunk.get("general_raw") or "—"
         special = chunk.get("special_raw") or "—"
         col2 = chunk.get("col2_raw") or "—"
